@@ -36,8 +36,25 @@ def verifica_status_client(id_client:int) -> str:
     """
     return f"Clientul {id_client} are status: Activ fara restante"
 
+#Definim a treia functie Python
+def estimeaza_prioritate_client(nr_comenzi_anterioare: int, valoare_totala_comenzi: float) -> str:
+    """Verifica tipul clientului VIP sau standard in baza comenzilor emise si a valorii acestora
+    
+    Args:
+        nr_comenzi_anterioare = numarul de comenzi emise de client
+        valoare_totala_comenzi - valoarea totala a comenzilor emise de catre client
+    """
+    try:
+        medie_comanda = valoare_totala_comenzi/nr_comenzi_anterioare
+        if medie_comanda > 1000 and nr_comenzi_anterioare > 10:
+            return "Client VIP"
+        return "Client Standard"
 
-#Inregistram această funcție în LangSmith pentru tracing
+    except ZeroDivisionError:
+        return"Eroare: Daca valoarea totala a comenzilor este 0, atunci clienul nu a emis comenzi pana in acest moment"
+
+
+#Inregistram aceste funcții în LangSmith pentru tracing
 @traceable
 def trimite_mesaj(chat, mesaj: str):
     return chat.send_message(mesaj)
@@ -46,7 +63,7 @@ def trimite_mesaj(chat, mesaj: str):
 chat = client.chats.create(
     model="gemini-3.6-flash",
     config=types.GenerateContentConfig(system_instruction="""Ești un asistent care ajută operatorii de call center BPO.
-Ai acces la tool-uri pentru calcularea timpilor de așteptare și verificarea statusului clienților.
+Ai acces la tool-uri pentru calcularea timpilor de așteptare, verificarea statusului clienților si tipul clientului pentru prioritizare.
 Răspunde tot timpul în limba română.
 
 Exemple de răspunsuri dorite:
@@ -57,8 +74,11 @@ Răspuns bun: "Timp estimat: 8 minute. Recomand alocarea unui operator supliment
 Întrebare: "Clientul 1234 e ok?"
 Răspuns bun: "Da, clientul 1234 are status activ, fără restanțe. Poate fi procesat normal."
 
+Întrebare: "Daca un client a emis 10 comenzi in valoare toatala de 15000 de lei, ce tip de client este considerat?"
+Raspuns bun: "In baza comenzilor emise si a valori lor(1500 lei/comanda), acesta este un client VIP iar timpul de asteptare va fi redus cu pana la 30%"
+
 Urmează exact acest stil: concis, cu o concluzie sau recomandare scurtă la final, ton profesional.""",
-                                       tools=[calculeaza_timp_asteptare, verifica_status_client], #aici ii dam acces la functie
+                                       tools=[calculeaza_timp_asteptare, verifica_status_client, estimeaza_prioritate_client], #aici ii dam acces la functii
                                        ),
 )
 
