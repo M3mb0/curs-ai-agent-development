@@ -23,34 +23,42 @@ def curata_text(text: str) -> str:
     text = text.strip()                           # elimină spații de la început/final
     return text
 
-
-def imparte_cu_overlap(text: str, dimensiune: int, overlap: int) -> list:
-    """Împarte textul în bucăți cu suprapunere."""
-    chunks = []
-    for i in range(0, len(text), dimensiune - overlap):
-        end = i + dimensiune
-        chunks.append(text[i:end])
-    return chunks
-
+encoder = tiktoken.get_encoding("cl100k_base")  # encoder generic, folosit pe scară largă
 
 def numara_tokeni(text: str) -> int:
     """Numără câți tokeni are un text."""
     return len(encoder.encode(text))
 
+def imparte_cu_overlap(text: str, dimensiune: int, overlap: int, sursa: str) -> list:
+    """Împarte textul în bucăți cu suprapunere, fiecare cu metadata atașată."""
+    chunks = []
+    index_chunk = 0
+    for i in range(0, len(text), dimensiune - overlap):
+        end = i + dimensiune
+        bucata_text = text[i:end]
+
+        chunk = {
+            "text": bucata_text,
+            "sursa": sursa,
+            "index_chunk": index_chunk,
+            "nr_tokeni":numara_tokeni(bucata_text)
+
+        }
+        chunks.append(chunk)
+        index_chunk += 1
+    return chunks
+
+
 # Aplicăm chunking pe textul extras din CV
 text_curatat = curata_text(text_complet)
-chunks = imparte_cu_overlap(text_curatat, dimensiune=500, overlap=50)
-
-encoder = tiktoken.get_encoding("cl100k_base")  # encoder generic, folosit pe scară largă
-
+chunks = imparte_cu_overlap(text_curatat, dimensiune=500, overlap=50, sursa="Cristian_Ungureanu_TechSupport_CV.pdf")
 
 
 print(f"\nNumăr total de chunk-uri: {len(chunks)}\n")
 
-# for i, chunk in enumerate(chunks):
-#     print(f"--- Chunk {i+1} ---")
-#     print(chunk[:200])  # primele 200 caractere din fiecare chunk, ca verificare
-#     print()
+for chunk in chunks[:3]:
+    print(chunk)
+    print()
 
-print(f" Numarul de tokeni este {numara_tokeni(text_curatat)}")
-print(f"Numarul de caratere este {len(text_curatat)}")
+# print(f" Numarul de tokeni este {numara_tokeni(text_curatat)}")
+# print(f"Numarul de caratere este {len(text_curatat)}")
