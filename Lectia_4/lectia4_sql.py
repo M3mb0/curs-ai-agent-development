@@ -51,6 +51,9 @@ cursor = conn.cursor()
 #     print(rand)
 
 cursor.execute("SELECT * FROM clienti WHERE status = 'activ'")
+#SELECT * FROM clienti WHERE numar_comenzi > 10
+#SELECT * FROM clienti WHERE status = 'activ' AND numar_comenzi > 15
+#SELECT * FROM clienti ORDER BY numar_comenzi DESC
 
 rezultate = cursor.fetchall()
 
