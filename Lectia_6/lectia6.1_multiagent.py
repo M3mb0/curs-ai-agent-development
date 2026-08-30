@@ -11,6 +11,7 @@ class State(TypedDict):
     extracted_facts: str
     final_answer: str
     next_step: str
+    iteration_count: int
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
@@ -112,7 +113,13 @@ def supervisor_node(state: State) -> dict:
     context += f"Analysis so far: {state.get('final_answer', 'none')}\n"
     
     decision = call_llm(system_prompt, context).strip().lower()
-    return {"next_step": decision}
+
+    current_count = state.get("iteration_count", 0)   # <- citești valoarea curentă din state
+    new_count = current_count + 1               # <- calculezi noua valoare
+
+    if new_count >= 5:
+        decision = "done"
+    return {"next_step": decision, "iteration_count": new_count}
 
 
 def route_from_supervisor(state: State) -> str:
@@ -150,3 +157,5 @@ result = graph.invoke({
                 "and abandon rate was 18%, much higher than the usual 3% target."
 })
 print(result["final_answer"])
+print("-"*20)
+print("Numar de iteratii folosite:", result["iteration_count"])
