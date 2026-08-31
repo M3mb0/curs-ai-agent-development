@@ -13,5 +13,3 @@ DB_CONFIG = {
     "user": "postgres",
     "password": "parola123"
 }
-
-print("Cheie încărcată:", "DA" if GEMINI_API_KEY else "NU")
