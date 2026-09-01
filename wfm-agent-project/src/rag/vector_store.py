@@ -55,13 +55,13 @@ if __name__ == "__main__":
     from chunking import chunk_documents
     from embeddings import add_embeddings_to_chunks
 
-docs = load_documents_from_folder("wfm-agent-project/data/kb_documents")
-chunks = chunk_documents(docs)
-chunks_with_embeddings = add_embeddings_to_chunks(chunks)
+    docs = load_documents_from_folder("wfm-agent-project/data/kb_documents")
+    chunks = chunk_documents(docs)
+    chunks_with_embeddings = add_embeddings_to_chunks(chunks)
 
-conn = get_connection()
-create_table_if_not_exists(conn)
-insert_chunks(conn, chunks_with_embeddings)
-conn.close()
+    conn = get_connection()
+    create_table_if_not_exists(conn)
+    insert_chunks(conn, chunks_with_embeddings)
+    conn.close()
 
-print(f"Inserted {len(chunks_with_embeddings)} chunks into the database.")
+    print(f"Inserted {len(chunks_with_embeddings)} chunks into the database.")
