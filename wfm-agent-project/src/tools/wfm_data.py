@@ -38,14 +38,9 @@ def get_daily_metrics(df: pd.DataFrame, language: str, lob: str, date: str) -> d
     
 
 
-# if __name__ == "__main__":
-#     df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
-#     print(df.shape)
-#     print(df.columns.tolist())
-#     print(df.head())
-
 if __name__ == "__main__":
     df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
+    print(df.shape)
     
     metrics = get_daily_metrics(df, "Language 1", "LOB 1", "2015-10-20")
     print(metrics)
