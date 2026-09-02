@@ -72,6 +72,30 @@ def calculate_service_level(df: pd.DataFrame, language: str, lob: str, date: str
     }
 
 
+def get_talktime_by_period(df: pd.DataFrame, language: str, lob: str, start_date: str, end_date: str) -> dict:
+    """Calculates the total talk time for a certain period.
+
+    Args:
+        df: DataFrame created from the Excel file
+        language: language to filter by
+        lob: LOB (line of business) to filter by
+        start_date: the start date to filter by
+        end_date: the end date to filter by
+
+    Returns:
+        A dictionary with total talk time in seconds, minutes, and hours
+    """
+    str_start_date = pd.to_datetime(start_date)
+    str_end_date = pd.to_datetime(end_date)
+    filtered = df[(df["repdate"] >= str_start_date) & (df["repdate"] <= str_end_date) & (df["Dim_Language"] == language) & (df["LOB"] == lob)]
+    
+    total_talktime_seconds = int(filtered["tottalktime"].sum())
+    
+    return {
+        "total_seconds": total_talktime_seconds,
+        "total_minutes": round(total_talktime_seconds / 60, 2),
+        "total_hours": round(total_talktime_seconds / 3600, 2)
+    }
 
 
 if __name__ == "__main__":
@@ -83,3 +107,6 @@ if __name__ == "__main__":
 
     sl = calculate_service_level(df, "Language 1", "LOB 1", "2015-10-20")
     print(sl)
+
+    tt = get_talktime_by_period(df, "Language 1", "LOB 1", "2015-10-14", "2015-10-20")
+    print(tt)
