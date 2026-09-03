@@ -98,6 +98,45 @@ def get_talktime_by_period(df: pd.DataFrame, language: str, lob: str, start_date
     }
 
 
+def get_monthly_distribution_by_language(df: pd.DataFrame, lob: str) -> dict:
+    """Calculates the percentage distribution of offered calls by language.
+
+    Args:
+        df: DataFrame created from the Excel file
+        lob: LOB (line of business) to filter by
+
+    Returns:
+        A dictionary with each language's percentage of total offered calls
+    """
+    filtered = df[df["LOB"] == lob]
+    
+    sum_by_language = filtered.groupby("Dim_Language")["offered"].sum()
+    total = int(filtered["offered"].sum())
+    
+    result = {}
+    for language, calls in sum_by_language.items():
+        result[language] = round(calls / total * 100, 2)
+    
+    return result
+
+
+def add_timezone_column(df: pd.DataFrame, offset_hours: int, column_name: str) -> pd.DataFrame:
+    """Adds a new column with times shifted by a given number of hours.
+
+    Args:
+        df: DataFrame created from the Excel file
+        offset_hours: how many hours to shift (positive or negative)
+        column_name: name of the new column to create
+
+    Returns:
+        The same DataFrame, with the new shifted-time column added
+    """
+    time_as_datetime = pd.to_datetime(df["Intvl_UTC"], format="%H:%M")
+    shifted = time_as_datetime + pd.Timedelta(hours=offset_hours)
+    df[column_name] = shifted.dt.strftime("%H:%M")
+    return df
+    
+
 if __name__ == "__main__":
     df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
     print(df.shape)
@@ -110,3 +149,18 @@ if __name__ == "__main__":
 
     tt = get_talktime_by_period(df, "Language 1", "LOB 1", "2015-10-14", "2015-10-20")
     print(tt)
+
+    dist = get_monthly_distribution_by_language(df, "LOB 1")
+    print(dist)
+
+    for key in dist.keys():
+        print(key, type(key))
+
+    print(type(df["Intvl_UTC"].iloc[0]))
+    print(df["Intvl_UTC"].iloc[0])
+
+    df = add_timezone_column(df, -4, "Intvl_UTC-4")
+    print(df[["Intvl_UTC", "Intvl_UTC-4"]].head())
+
+    df = add_timezone_column(df, 5, "Intvl_UTC+5")
+    print(df[["Intvl_UTC", "Intvl_UTC+5"]].head())
