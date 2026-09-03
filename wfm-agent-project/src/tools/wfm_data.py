@@ -135,6 +135,41 @@ def add_timezone_column(df: pd.DataFrame, offset_hours: int, column_name: str) -
     shifted = time_as_datetime + pd.Timedelta(hours=offset_hours)
     df[column_name] = shifted.dt.strftime("%H:%M")
     return df
+
+
+def compare_two_days(df: pd.DataFrame, language: str, lob: str, date1: str, date2: str) -> dict:
+    """Comparing 2 days metrics
+    
+    Args:
+        df: DataFrame created from the Excel file
+        language: language to filter by
+        lob: LOB (line of business) to filter by
+        date1: date to be compared with
+        date2: date to be compared with
+
+    Return:
+        A dict with the comparation betwen the 2 days
+    """
+    metrics_day1 = get_daily_metrics(df, language, lob, date1)
+    metrics_day2 = get_daily_metrics(df, language, lob, date2)
+    
+    sl_day1 = calculate_service_level(df, language, lob, date1)
+    sl_day2 = calculate_service_level(df, language, lob, date2)
+    
+    metrics_difference = {k: round((metrics_day2[k] - metrics_day1[k]), 2) for k in metrics_day2}
+    sl_difference = {k: round((sl_day2[k] - sl_day1[k]), 2) for k in sl_day2}
+    return {
+        "day1": {
+           "metrics_day1": metrics_day1,
+           "sl_day1": sl_day1
+        },
+        "day2": {
+            "metrics_day2": metrics_day2,
+            "sl_day2": sl_day2
+        },
+        "metric_difference": metrics_difference,
+        "sl_difference": sl_difference
+    }
     
 
 if __name__ == "__main__":
@@ -164,3 +199,6 @@ if __name__ == "__main__":
 
     df = add_timezone_column(df, 5, "Intvl_UTC+5")
     print(df[["Intvl_UTC", "Intvl_UTC+5"]].head())
+
+    comparison = compare_two_days(df, "Language 1", "LOB 1", "2015-10-20", "2015-10-21")
+    print(comparison)
