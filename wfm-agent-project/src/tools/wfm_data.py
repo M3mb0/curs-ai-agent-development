@@ -172,6 +172,58 @@ def compare_two_days(df: pd.DataFrame, language: str, lob: str, date1: str, date
     }
     
 
+def forecast_by_pattern(df: pd.DataFrame, language: str, lob: str, historical_date: str, target_volume: int) -> dict:
+    """Forecasts call volume distribution across hourly intervals, based on
+    a historical day's pattern.
+
+    Args:
+        df: DataFrame created from the Excel file
+        language: language to filter by
+        lob: LOB (line of business) to filter by
+        historical_date: date on which the forecast is based
+        target_volume: total estimated call volume to distribute
+
+    Returns:
+        A dictionary with the forecasted volume for each interval
+    """
+
+    str_historical_date = pd.to_datetime(historical_date)
+    filtered = df[(df["Dim_Language"] == language) & (df["LOB"] == lob) & (df["repdate"] == str_historical_date)]
+    total_offered_per_interval = filtered.groupby("Intvl_UTC")["offered"].sum()
+    total_offered_per_day = filtered["offered"].sum()
+
+    result = {}
+    for interval, offered in total_offered_per_interval.items():
+        fraction = offered / total_offered_per_day
+        result[interval] = float(round(fraction * target_volume, 2))
+
+    return result
+
+def forecast_by_weekday_pattern(df: pd.DataFrame, language: str, lob: str, weekday: str, target_volume: int) -> dict:
+    """Forecasts call volume distribution across hourly intervals, based on
+    a historical weekday's aggregated pattern.
+
+    Args:
+        df: DataFrame created from the Excel file
+        language: language to filter by
+        lob: LOB (line of business) to filter by
+        weekday: the day of week the forecast is based on (e.g. "Monday")
+        target_volume: total estimated call volume to distribute
+
+    Returns:
+        A dictionary with the forecasted volume for each interval
+    """
+    filtered = df[(df["Dim_Language"] == language) & (df["LOB"] == lob) & (df["repdate"].dt.day_name() == weekday)]
+    total_offered_per_interval_weekday = filtered.groupby("Intvl_UTC")["offered"].sum()
+    total_offered_per_weekdays = filtered["offered"].sum()
+    
+    result = {}
+    for interval, offered in total_offered_per_interval_weekday.items():
+        fraction = offered / total_offered_per_weekdays
+        result[interval] = float(round(fraction * target_volume, 2))
+
+    return result
+
 if __name__ == "__main__":
     df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
     print(df.shape)
@@ -202,3 +254,12 @@ if __name__ == "__main__":
 
     comparison = compare_two_days(df, "Language 1", "LOB 1", "2015-10-20", "2015-10-21")
     print(comparison)
+
+    forecast = forecast_by_pattern(df, "Language 1", "LOB 1", "2015-10-20", 500)
+    print(forecast)
+    total = sum(forecast.values())
+    print("Total forecast:", total)
+
+    forecast = forecast_by_weekday_pattern(df, "Language 2", "LOB 1", "Monday", 1200)
+    print(forecast)
+    print("Total:", sum(forecast.values()))
