@@ -77,6 +77,26 @@ def distribute_breaks_all_shifts(pattern: pd.DataFrame, shifts: list) -> dict:
 
     return all_shifts_breaks
 
+def aggregate_breaks_by_interval(all_shifts_breaks: dict, break_duration: int = 30) -> dict:
+    """Aggregates break allocations across all shifts, per interval.
+
+        Args:
+            all_shifts_breaks: dict mapping shift names to their break
+                allocation dicts (interval -> minutes)
+            break_duration: length of a single break, in minutes (default: 30)
+
+        Returns:
+            A dict mapping each interval to the total number of agents
+            on break at that time, combined across all shifts
+    """
+    aggregated = {}
+    for shift_name, breaks in all_shifts_breaks.items():
+        for interval, minutes in breaks.items():
+            agents_on_break = minutes / break_duration
+            aggregated[interval] = aggregated.get(interval, 0) + agents_on_break
+    return aggregated
+    
+
 
 if __name__ == "__main__":
     pattern = load_arrival_pattern("wfm-agent-project/data/wfm.xlsx")
@@ -89,9 +109,12 @@ if __name__ == "__main__":
 
     result = distribute_breaks_for_shift(pattern, shift1)
     print(result)
-    
+
     total_allocated = sum(result.values())
     print("Total allocated:", total_allocated)
 
     all_breaks = distribute_breaks_all_shifts(pattern, SHIFTS)
     print(all_breaks)
+
+    aggregated = aggregate_breaks_by_interval(all_breaks)
+    print(aggregated)
