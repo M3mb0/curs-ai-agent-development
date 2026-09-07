@@ -33,7 +33,18 @@ def distribute_breaks_for_shift(pattern: pd.DataFrame, shift: dict) -> dict:
     shift_end = pd.to_datetime(shift["end"]).time()
 
     filtered = pattern[(pattern["hour"] >= shift_start) & (pattern["hour"] <= shift_end)]
-    return filtered
+    no_breaks = filtered.iloc[2:-2]
+    max_calls = no_breaks["offered_calls"].max()
+    no_breaks["weight"] = max_calls - no_breaks["offered_calls"]
+    total_weight = no_breaks["weight"].sum()
+    total_break_minutes = shift["agents"] * 30
+    break_allocation = {}
+    for index, row in no_breaks.iterrows():
+        fraction = row["weight"] / total_weight
+        minutes = fraction * total_break_minutes
+        break_allocation[str(row["hour"])] = float(round(minutes, 2))
+
+    return break_allocation
 
 
 if __name__ == "__main__":
@@ -43,4 +54,9 @@ if __name__ == "__main__":
 
     shift1 = SHIFTS[0]
     result = distribute_breaks_for_shift(pattern, shift1)
-    print(result) 
+    print(result)
+
+    result = distribute_breaks_for_shift(pattern, shift1)
+    print(result)
+    total_allocated = sum(result.values())
+    print("Total allocated:", total_allocated)
