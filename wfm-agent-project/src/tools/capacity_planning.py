@@ -242,7 +242,16 @@ def load_site_params(file_path: str) -> dict:
 
 
 def calculate_capacity(staffing: dict, params: dict) -> dict:
-    """..."""
+    """Calculates capacity based on aht, occupancy, offline & shrinkage
+
+    Args:
+        staffing: a dict with how many agents are online for every 30 min interval
+        params: aht, occupancy, offline & shrinkage
+
+    Returns:
+        A dict with capacity for each 30 minutes interval
+    
+    """
     capacity = {}
     for interval, staff in staffing.items():
         capacity_staff = (staff * (1 - params["offline"]) * (1 - params["shrinkage"]) * params["occupancy"] * 30) / params["aht"]
