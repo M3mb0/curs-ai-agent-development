@@ -16,7 +16,7 @@ def load_arrival_pattern(file_path: str) -> pd.DataFrame:
     
         Returns:
             A pandas DataFrame with the planing breaks data
-        """
+    """
     df = pd.read_excel(
         file_path, 
         sheet_name="Planning breaks",
@@ -213,6 +213,43 @@ def calculate_staffing(pattern: pd.DataFrame, shifts: list, meeting_times: list 
     return staffing
 
 
+def load_site_params(file_path: str) -> dict:
+    """Loads the site capacity parameters from the Excel file.
+
+    Args:
+        file_path: path to the Excel file
+
+    Returns:
+        A dict with aht, occupancy, offline, and shrinkage values
+    """
+    df = pd.read_excel(
+        file_path,
+        sheet_name="Capacity Calculation",
+        skiprows=6,
+        nrows=1,
+        usecols="B:F",
+        header=None
+    )
+    df.columns = ["site", "aht", "occupancy", "offline", "shrinkage"]
+    
+    row = df.iloc[0]
+    return {
+        "aht": float(row["aht"]),
+        "occupancy": float(row["occupancy"]),
+        "offline": float(row["offline"]),
+        "shrinkage": float(row["shrinkage"])
+    }
+
+
+def calculate_capacity(staffing: dict, params: dict) -> dict:
+    """..."""
+    capacity = {}
+    for interval, staff in staffing.items():
+        capacity_staff = (staff * (1 - params["offline"]) * (1 - params["shrinkage"]) * params["occupancy"] * 30) / params["aht"]
+        capacity[interval] = round(capacity_staff, 2)
+    return capacity
+
+
 if __name__ == "__main__":
     pattern = load_arrival_pattern("wfm-agent-project/data/wfm.xlsx")
     print(pattern.shape)
@@ -257,3 +294,9 @@ if __name__ == "__main__":
 
     staffing_b = calculate_staffing(pattern, SHIFTS, [("09:00", "10:30"), ("15:00", "16:30")])
     print("Task B staffing:", staffing_b)
+
+    params = load_site_params("wfm-agent-project/data/wfm.xlsx")
+    print(params)
+
+    capacity = calculate_capacity(staffing_a, params)
+    print(capacity)
