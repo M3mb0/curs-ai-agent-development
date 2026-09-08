@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 SHIFTS = [
     {"name": "Shift 1", "start": "07:00", "end": "15:00", "agents": 15},
     {"name": "Shift 2", "start": "10:30", "end": "18:30", "agents": 20},
@@ -158,6 +159,60 @@ def distribute_breaks_all_shifts_with_meetings(pattern: pd.DataFrame, shifts: li
         all_shifts_breaks[shift["name"]] = breaks
     return all_shifts_breaks
 
+def active_agents_at(hour: str, shifts: list) -> int:
+    """Calculates how many agents are active for each interval
+
+    Args:
+        hour: represent the hour when we do the checking
+        shifts: list of shift dicts, each with start, end, and agents
+
+    Returns:
+        Total number of agents of a certain hour
+    """
+    hour_time = pd.to_datetime(hour).time()
+    
+    total = 0
+    for shift in shifts:
+        start_time = pd.to_datetime(shift["start"]).time()
+        end_time = pd.to_datetime(shift["end"]).time()
+        if hour_time >= start_time and hour_time <= end_time:
+            total += shift["agents"]
+    return total
+
+
+def calculate_staffing(pattern: pd.DataFrame, shifts: list, meeting_times: list = None) -> dict:
+    """Calculates effective staffing per interval, as active agents
+    minus agents on break, optionally excluding meeting times from
+    break eligibility.
+
+    Args:
+        pattern: DataFrame with the arrival pattern (hour, offered_calls)
+        shifts: list of shift dicts, each with start, end, and agents
+        meeting_times: optional list of (start, end) string tuples for
+            meeting periods excluded from break eligibility; if None,
+            breaks are distributed without excluding any meetings
+
+    Returns:
+        A dict mapping each interval (as a string) to the effective
+        number of agents staffed (active minus on break)
+    """
+    if meeting_times:
+        all_breaks = distribute_breaks_all_shifts_with_meetings(pattern, shifts, meeting_times)
+    else:
+        all_breaks = distribute_breaks_all_shifts(pattern, shifts)
+    
+    breaks_aggregated = aggregate_breaks_by_interval(all_breaks)
+    
+    staffing = {}
+    for index, row in pattern.iterrows():
+        hour_str = str(row["hour"])
+        active = active_agents_at(hour_str, shifts)
+        on_break = breaks_aggregated.get(hour_str, 0)
+        staffing[hour_str] = active - on_break
+    
+    return staffing
+
+
 if __name__ == "__main__":
     pattern = load_arrival_pattern("wfm-agent-project/data/wfm.xlsx")
     print(pattern.shape)
@@ -192,3 +247,13 @@ if __name__ == "__main__":
     for shift_name, breaks in all_breaks_b.items():
         total = sum(breaks.values())
         print(f"{shift_name}: total = {total}, agents = {total/30:.2f}")
+
+
+    print(active_agents_at("11:30", SHIFTS))  
+    print(active_agents_at("11:30:00", SHIFTS))    # testezi și cu secunde, ca să vezi diferența
+
+    staffing_a = calculate_staffing(pattern, SHIFTS)  # fără meeting_times
+    print("Task A staffing:", staffing_a)
+
+    staffing_b = calculate_staffing(pattern, SHIFTS, [("09:00", "10:30"), ("15:00", "16:30")])
+    print("Task B staffing:", staffing_b)
