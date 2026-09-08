@@ -6,6 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from google import genai
 from config import GEMINI_API_KEY
+from exceptions.custom_errors import RateLimitError
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -20,11 +21,16 @@ def get_embedding(text: str) -> list:
         A list of floats (the embedding), representing the semantic
         meaning of the text.
     """
-    result = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=text
-    )
-    return result.embeddings[0].values
+    try:
+        result = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=text
+        )
+        return result.embeddings[0].values
+    except Exception as e:
+        if "RESOURCE_EXHAUSTED" in str(e):
+            raise RateLimitError(str(e))
+        raise
 
 
 def get_embedding_with_retry(text: str, max_retries: int = 5) -> list:
@@ -40,11 +46,11 @@ def get_embedding_with_retry(text: str, max_retries: int = 5) -> list:
     for attempt in range(max_retries):
         try:
             return get_embedding(text)
-        except Exception as e:
+        except RateLimitError:
             wait_time = 20 * (attempt + 1)
-            print(f"Rate limit, retry {attempt + 1}/{max_retries}, waiting {wait_time}s...")
+            print(f"Rate limit hit, retry {attempt + 1}/{max_retries}, waiting {wait_time}s...")
             time.sleep(wait_time)
-    raise Exception("Failed after maximum retries")
+    raise RateLimitError(f"Failed after {max_retries} retries")
 
 
 def add_embeddings_to_chunks(chunks: list) -> list:
@@ -58,7 +64,7 @@ def add_embeddings_to_chunks(chunks: list) -> list:
     """
     for i, chunk in enumerate(chunks):
         chunk["embedding"] = get_embedding_with_retry(chunk["text"])
-        print(f"Procesat chunk {i+1}/{len(chunks)}")
+        print(f"Processed chunk {i+1}/{len(chunks)}")
         time.sleep(5)
     return chunks
 

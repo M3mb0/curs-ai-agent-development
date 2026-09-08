@@ -10,15 +10,15 @@ SHIFTS = [
 
 def load_arrival_pattern(file_path: str) -> pd.DataFrame:
     """Loads the WFM planning breaks data from the Excel file.
-    
-        Args:
-            file_path: path to the Excel file
-    
-        Returns:
-            A pandas DataFrame with the planing breaks data
+
+    Args:
+        file_path: path to the Excel file
+
+    Returns:
+        A pandas DataFrame with the planning breaks data
     """
     df = pd.read_excel(
-        file_path, 
+        file_path,
         sheet_name="Planning breaks",
         skiprows=12,
         usecols="B:C",
@@ -27,6 +27,30 @@ def load_arrival_pattern(file_path: str) -> pd.DataFrame:
     )
     df.columns = ["hour", "offered_calls"]
     return df
+
+
+def _calculate_break_distribution(eligible_intervals: pd.DataFrame, total_break_minutes: int) -> dict:
+    """Calculates break distribution from already-filtered eligible intervals.
+
+    Args:
+        eligible_intervals: DataFrame with intervals eligible for breaks
+        total_break_minutes: total break minutes to distribute
+
+    Returns:
+        A dict mapping each interval (as a string) to break minutes allocated
+    """
+    eligible_intervals = eligible_intervals.copy()
+    max_calls = eligible_intervals["offered_calls"].max()
+    eligible_intervals["weight"] = max_calls - eligible_intervals["offered_calls"]
+    total_weight = eligible_intervals["weight"].sum()
+
+    break_allocation = {}
+    for index, row in eligible_intervals.iterrows():
+        fraction = row["weight"] / total_weight
+        minutes = fraction * total_break_minutes
+        break_allocation[str(row["hour"])] = float(round(minutes, 2))
+
+    return break_allocation
 
 
 def distribute_breaks_for_shift(pattern: pd.DataFrame, shift: dict) -> dict:
@@ -41,23 +65,14 @@ def distribute_breaks_for_shift(pattern: pd.DataFrame, shift: dict) -> dict:
     Returns:
         A dict mapping each eligible interval (as a string) to the
         number of break minutes allocated to it
-    """ 
+    """
     shift_start = pd.to_datetime(shift["start"]).time()
     shift_end = pd.to_datetime(shift["end"]).time()
 
     filtered = pattern[(pattern["hour"] >= shift_start) & (pattern["hour"] <= shift_end)]
-    no_breaks = filtered.iloc[2:-2]
-    max_calls = no_breaks["offered_calls"].max()
-    no_breaks["weight"] = max_calls - no_breaks["offered_calls"]
-    total_weight = no_breaks["weight"].sum()
-    total_break_minutes = shift["agents"] * 30
-    break_allocation = {}
-    for index, row in no_breaks.iterrows():
-        fraction = row["weight"] / total_weight
-        minutes = fraction * total_break_minutes
-        break_allocation[str(row["hour"])] = float(round(minutes, 2))
+    eligible = filtered.iloc[2:-2]
 
-    return break_allocation
+    return _calculate_break_distribution(eligible, shift["agents"] * 30)
 
 
 def distribute_breaks_all_shifts(pattern: pd.DataFrame, shifts: list) -> dict:
@@ -78,17 +93,18 @@ def distribute_breaks_all_shifts(pattern: pd.DataFrame, shifts: list) -> dict:
 
     return all_shifts_breaks
 
+
 def aggregate_breaks_by_interval(all_shifts_breaks: dict, break_duration: int = 30) -> dict:
     """Aggregates break allocations across all shifts, per interval.
 
-        Args:
-            all_shifts_breaks: dict mapping shift names to their break
-                allocation dicts (interval -> minutes)
-            break_duration: length of a single break, in minutes (default: 30)
+    Args:
+        all_shifts_breaks: dict mapping shift names to their break
+            allocation dicts (interval -> minutes)
+        break_duration: length of a single break, in minutes (default: 30)
 
-        Returns:
-            A dict mapping each interval to the total number of agents
-            on break at that time, combined across all shifts
+    Returns:
+        A dict mapping each interval to the total number of agents
+        on break at that time, combined across all shifts
     """
     aggregated = {}
     for shift_name, breaks in all_shifts_breaks.items():
@@ -96,7 +112,7 @@ def aggregate_breaks_by_interval(all_shifts_breaks: dict, break_duration: int = 
             agents_on_break = minutes / break_duration
             aggregated[interval] = aggregated.get(interval, 0) + agents_on_break
     return aggregated
-    
+
 
 def distribute_breaks_for_shift_with_meetings(pattern: pd.DataFrame, shift: dict, meeting_times: list) -> dict:
     """Distributes available break minutes across 30-minute intervals
@@ -126,18 +142,7 @@ def distribute_breaks_for_shift_with_meetings(pattern: pd.DataFrame, shift: dict
         not_in_meeting = ~((eligible["hour"] >= meeting_start) & (eligible["hour"] <= meeting_end))
         eligible = eligible[not_in_meeting]
 
-    max_calls = eligible["offered_calls"].max()
-    eligible["weight"] = max_calls - eligible["offered_calls"]
-    total_weight = eligible["weight"].sum()
-    total_break_minutes = shift["agents"] * 30
-
-    break_allocation = {}
-    for index, row in eligible.iterrows():
-        fraction = row["weight"] / total_weight
-        minutes = fraction * total_break_minutes
-        break_allocation[str(row["hour"])] = float(round(minutes, 2))
-
-    return break_allocation
+    return _calculate_break_distribution(eligible, shift["agents"] * 30)
 
 
 def distribute_breaks_all_shifts_with_meetings(pattern: pd.DataFrame, shifts: list, meeting_times: list) -> dict:
@@ -159,18 +164,19 @@ def distribute_breaks_all_shifts_with_meetings(pattern: pd.DataFrame, shifts: li
         all_shifts_breaks[shift["name"]] = breaks
     return all_shifts_breaks
 
+
 def active_agents_at(hour: str, shifts: list) -> int:
-    """Calculates how many agents are active for each interval
+    """Calculates how many agents are active for a given interval.
 
     Args:
-        hour: represent the hour when we do the checking
+        hour: the hour to check
         shifts: list of shift dicts, each with start, end, and agents
 
     Returns:
-        Total number of agents of a certain hour
+        Total number of agents active at that hour
     """
     hour_time = pd.to_datetime(hour).time()
-    
+
     total = 0
     for shift in shifts:
         start_time = pd.to_datetime(shift["start"]).time()
@@ -200,16 +206,16 @@ def calculate_staffing(pattern: pd.DataFrame, shifts: list, meeting_times: list 
         all_breaks = distribute_breaks_all_shifts_with_meetings(pattern, shifts, meeting_times)
     else:
         all_breaks = distribute_breaks_all_shifts(pattern, shifts)
-    
+
     breaks_aggregated = aggregate_breaks_by_interval(all_breaks)
-    
+
     staffing = {}
     for index, row in pattern.iterrows():
         hour_str = str(row["hour"])
         active = active_agents_at(hour_str, shifts)
         on_break = breaks_aggregated.get(hour_str, 0)
         staffing[hour_str] = active - on_break
-    
+
     return staffing
 
 
@@ -231,7 +237,7 @@ def load_site_params(file_path: str) -> dict:
         header=None
     )
     df.columns = ["site", "aht", "occupancy", "offline", "shrinkage"]
-    
+
     row = df.iloc[0]
     return {
         "aht": float(row["aht"]),
@@ -242,15 +248,14 @@ def load_site_params(file_path: str) -> dict:
 
 
 def calculate_capacity(staffing: dict, params: dict) -> dict:
-    """Calculates capacity based on aht, occupancy, offline & shrinkage
+    """Calculates capacity based on aht, occupancy, offline, and shrinkage.
 
     Args:
         staffing: a dict with how many agents are online for every 30 min interval
-        params: aht, occupancy, offline & shrinkage
+        params: dict with aht, occupancy, offline, and shrinkage
 
     Returns:
-        A dict with capacity for each 30 minutes interval
-    
+        A dict with capacity for each 30-minute interval
     """
     capacity = {}
     for interval, staff in staffing.items():
@@ -261,51 +266,16 @@ def calculate_capacity(staffing: dict, params: dict) -> dict:
 
 if __name__ == "__main__":
     pattern = load_arrival_pattern("wfm-agent-project/data/wfm.xlsx")
-    print(pattern.shape)
-    print(pattern.head())
-
-    shift1 = SHIFTS[0]
-    result = distribute_breaks_for_shift(pattern, shift1)
-    print(result)
-
-    result = distribute_breaks_for_shift(pattern, shift1)
-    print(result)
-
-    total_allocated = sum(result.values())
-    print("Total allocated:", total_allocated)
+    meetings = [("09:00", "10:30"), ("15:00", "16:30")]
 
     all_breaks = distribute_breaks_all_shifts(pattern, SHIFTS)
-    print(all_breaks)
-
-    aggregated = aggregate_breaks_by_interval(all_breaks)
-    print(aggregated)
-
-    print("-"*50)
-
-    meetings = [("09:00", "10:30"), ("15:00", "16:30")]
-    result_b = distribute_breaks_for_shift_with_meetings(pattern, shift1, meetings)
-    print(result_b)
-
-    print("-"*50)
+    print(aggregate_breaks_by_interval(all_breaks))
 
     all_breaks_b = distribute_breaks_all_shifts_with_meetings(pattern, SHIFTS, meetings)
-    
     for shift_name, breaks in all_breaks_b.items():
         total = sum(breaks.values())
         print(f"{shift_name}: total = {total}, agents = {total/30:.2f}")
 
-
-    print(active_agents_at("11:30", SHIFTS))  
-    print(active_agents_at("11:30:00", SHIFTS))    # testezi și cu secunde, ca să vezi diferența
-
-    staffing_a = calculate_staffing(pattern, SHIFTS)  # fără meeting_times
-    print("Task A staffing:", staffing_a)
-
-    staffing_b = calculate_staffing(pattern, SHIFTS, [("09:00", "10:30"), ("15:00", "16:30")])
-    print("Task B staffing:", staffing_b)
-
+    staffing_a = calculate_staffing(pattern, SHIFTS)
     params = load_site_params("wfm-agent-project/data/wfm.xlsx")
-    print(params)
-
-    capacity = calculate_capacity(staffing_a, params)
-    print(capacity)
+    print(calculate_capacity(staffing_a, params))
