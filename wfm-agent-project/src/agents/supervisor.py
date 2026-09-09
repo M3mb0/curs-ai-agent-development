@@ -96,26 +96,34 @@ def rag_node(state: State) -> dict:
 
 
 def extract_wfm_params_node(state: State) -> dict:
-    """Extracts language, LOB, and date from the user's question using the LLM.
-
-    Args:
-        state: the current graph state, containing the question
-
-    Returns:
-        A dict with the "language", "lob", and "date" keys
-    """
+    """..."""
     system_prompt = (
-        "Extract the language, LOB, and date from the question. "
-        "Respond ONLY in this exact format: language|lob|date "
-        "Example: Language 1|LOB 1|2015-10-20"
+    "Extract and NORMALIZE the language, LOB, and date from the question. "
+    "Valid languages are: Language 1, Language 2, Language 3, Language 4, Language 5, Language 6. "
+    "Valid LOBs are: LOB 1, LOB 2, LOB 3, LOB 4. "
+    "Correct any typos or informal phrasing to match these exact formats. "
+    "Convert any date format to YYYY-MM-DD. "
+    "Respond ONLY in this exact format: language|lob|date "
+    "Example: Language 1|LOB 1|2015-10-20 "
+    "If any value is unclear or cannot be confidently normalized, respond with exactly: UNCLEAR"
     )
     response = call_llm(system_prompt, state["question"], task_type="extraction")
+    
+    if response.strip() == "UNCLEAR" or response.count("|") != 2:
+        return {
+            "tool_result": "I couldn't understand the date, language, or LOB. "
+                          "Please specify clearly, e.g.: 'Language 1, LOB 1, 2015-10-20'."
+        }
+    
     language, lob, date = response.strip().split("|")
-
     return {"language": language, "lob": lob, "date": date}
 
 
 if __name__ == "__main__":
-    test_state = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
-    result = extract_wfm_params_node(test_state)
-    print(result)
+    # Test 1: clear question
+    test_state1 = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
+    print(extract_wfm_params_node(test_state1))
+    
+    # Test 2: ambiguous question with typo
+    test_state2 = {"question": "How many calls for Lang tow on lob 1, on Oct 20?"}
+    print(extract_wfm_params_node(test_state2))
