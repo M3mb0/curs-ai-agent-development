@@ -5,8 +5,13 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from typing import TypedDict
 from rag.search import search, cached_search
+from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config import GEMINI_API_KEY
+from tools.wfm_data import load_wfm_data, get_daily_metrics
+
+
+df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
 
 
 class State(TypedDict):
@@ -96,7 +101,17 @@ def rag_node(state: State) -> dict:
 
 
 def extract_wfm_params_node(state: State) -> dict:
-    """..."""
+    """Extracts and normalizes language, LOB, and date from the user's
+    question using the LLM, handling ambiguous or malformed input.
+
+    Args:
+        state: the current graph state, containing the question
+
+    Returns:
+        A dict with either the "language", "lob", and "date" keys
+        (on success), or a "tool_result" key with an error message
+        (if the values couldn't be confidently extracted)
+    """
     system_prompt = (
     "Extract and NORMALIZE the language, LOB, and date from the question. "
     "Valid languages are: Language 1, Language 2, Language 3, Language 4, Language 5, Language 6. "
@@ -119,6 +134,77 @@ def extract_wfm_params_node(state: State) -> dict:
     return {"language": language, "lob": lob, "date": date}
 
 
+def wfm_metrics_node(state: State) -> dict:
+    """Retrieves daily call metrics and formats them as text.
+
+    Args:
+        state: the current graph state, containing language, lob, and date
+
+    Returns:
+        A dict with the "tool_result" key, containing the formatted metrics
+    """
+    metrics = get_daily_metrics(df, state["language"], state["lob"], state["date"])
+    
+    combined_text = ""
+    for key, value in metrics.items():
+        combined_text += f"{key}: {value}\n"
+    
+    return {"tool_result": combined_text}
+
+
+def supervisor_node(state: State) -> dict:
+    """Decides which specialist should act next, based on current state.
+    
+    Args:
+        state: the current graph state
+
+    Returns:
+        A dict with the "next_step" key, naming the next node
+    """
+    system_prompt = (
+    "You are a supervisor coordinating: "
+    "rag (searches company procedures/knowledge base), "
+    "extractor (extracts language, LOB, and date from a WFM-related question), "
+    "metrics (retrieves call metrics, ONLY use after extractor has run), "
+    "done (task complete, ready to answer).\n\n"
+    "If the question is about company procedures or definitions, choose rag. "
+    "If the question is about call metrics (offered, handled, abandoned) and "
+    "language/lob/date have NOT been extracted yet, choose extractor. "
+    "If language/lob/date have already been extracted, choose metrics. "
+    "If you already have a tool result, choose done.\n\n"
+    "Respond with EXACTLY ONE WORD: rag, extractor, metrics, or done."
+    )
+    
+    context = f"Question: {state['question']}\n"
+    context += f"Language: {state.get('language', 'none')}\n"
+    context += f"LOB: {state.get('lob', 'none')}\n"
+    context += f"Date: {state.get('date', 'none')}\n"
+    context += f"Tool result so far: {state.get('tool_result', 'none')}\n"
+    
+    decision = call_llm(system_prompt, context, task_type="routing").strip().lower()
+    
+    current_count = state.get("iteration_count", 0)
+    new_count = current_count + 1
+
+    if new_count >= 10:
+        decision = "done"
+
+    # print(f"[DEBUG] Turn {new_count}: decision={decision}, language={state.get('language', 'none')}")
+    return {"next_step": decision, "iteration_count": new_count}
+
+
+def route_from_supervisor(state: State) -> str:
+    """Reads the supervisor's decision and returns the matching node name.
+
+    Args:
+        state: the current graph state, containing next_step
+
+    Returns:
+        The name of the next node
+    """
+    return state["next_step"]
+
+
 if __name__ == "__main__":
     # Test 1: clear question
     test_state1 = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
@@ -127,3 +213,31 @@ if __name__ == "__main__":
     # Test 2: ambiguous question with typo
     test_state2 = {"question": "How many calls for Lang tow on lob 1, on Oct 20?"}
     print(extract_wfm_params_node(test_state2))
+
+    test_state = {"language": "Language 1", "lob": "LOB 1", "date": "2015-10-20"}
+    print(wfm_metrics_node(test_state))
+
+    workflow = StateGraph(State)
+
+    workflow.add_node("supervisor", supervisor_node)
+    workflow.add_node("rag", rag_node)
+    workflow.add_node("metrics", wfm_metrics_node)
+    workflow.add_node("extractor", extract_wfm_params_node)
+
+    workflow.add_edge(START, "supervisor")
+    workflow.add_edge("rag", "supervisor")
+    workflow.add_edge("metrics", "supervisor")
+    workflow.add_edge("extractor", "supervisor")
+
+    workflow.add_conditional_edges("supervisor", route_from_supervisor, {
+        "rag": "rag",
+        "extractor": "extractor",
+        "metrics": "metrics",
+        "done": END
+    })
+
+    graph = workflow.compile()
+
+    result = graph.invoke({"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"})
+    print("\nFinal result:")
+    print(result)
