@@ -1,4 +1,5 @@
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def load_wfm_data(file_path: str) -> pd.DataFrame:
@@ -117,6 +118,26 @@ def get_monthly_distribution_by_language(df: pd.DataFrame, lob: str) -> dict:
         result[language] = round(calls / total * 100, 2)
 
     return result
+
+
+def plot_language_distribution(distribution: dict, output_path: str) -> None:
+    """Creates a bar chart of call distribution by language and
+    saves it as an image file.
+
+    Args:
+        distribution: a dict containing language names and percentages
+        output_path: the path where the image will be saved
+    """
+    languages = list(distribution.keys())
+    percentages = list(distribution.values())
+
+    plt.figure(figsize=(8, 5))
+    plt.bar(languages, percentages)
+    plt.xlabel("Language")
+    plt.ylabel("Percentage of calls")
+    plt.title("Call Distribution by Language")
+    plt.savefig(output_path)
+    plt.close()
 
 
 def add_timezone_column(df: pd.DataFrame, offset_hours: int, column_name: str) -> pd.DataFrame:
@@ -244,3 +265,6 @@ if __name__ == "__main__":
     print(compare_two_days(df, "Language 1", "LOB 1", "2015-10-20", "2015-10-21"))
     print(forecast_by_pattern(df, "Language 1", "LOB 1", "2015-10-20", 500))
     print(forecast_by_weekday_pattern(df, "Language 2", "LOB 1", "Monday", 1200))
+    
+    dist = get_monthly_distribution_by_language(df, "LOB 1")
+    plot_language_distribution(dist, "wfm-agent-project/data/language_distribution.png")
