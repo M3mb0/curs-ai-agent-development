@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from embeddings import get_embedding
-from vector_store import get_connection
+from rag.embeddings import get_embedding
+from rag.vector_store import get_connection
 
 
 def search(query: str, top_k: int = 3) -> list:
