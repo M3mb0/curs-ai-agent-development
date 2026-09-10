@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config import GEMINI_API_KEY
 from tools.wfm_data import load_wfm_data, get_daily_metrics
+from google.genai.types import AutomaticFunctionCallingConfig
 
 
 df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
@@ -47,7 +48,8 @@ def route_by_complexity(task_type: str) -> str:
 
 
 def get_llm(model_name: str) -> ChatGoogleGenerativeAI:
-    """Creates an LLM client for the given model name.
+    """Creates an LLM client for the given model name, with automatic
+    function calling explicitly disabled.
 
     Args:
         model_name: the Gemini model name to use
@@ -55,7 +57,8 @@ def get_llm(model_name: str) -> ChatGoogleGenerativeAI:
     Returns:
         A configured ChatGoogleGenerativeAI instance
     """
-    return ChatGoogleGenerativeAI(model=model_name, google_api_key=GEMINI_API_KEY)
+    llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=GEMINI_API_KEY)
+    return llm.bind(automatic_function_calling=AutomaticFunctionCallingConfig(disable=True))
 
 
 def call_llm(system_prompt: str, user_message: str, task_type: str = "reasoning") -> str:
