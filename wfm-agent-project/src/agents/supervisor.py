@@ -208,6 +208,27 @@ def route_from_supervisor(state: State) -> str:
     return state["next_step"]
 
 
+def format_answer_node(state: State) -> dict:
+    """Turns the analysis into a polished, professional message.
+    
+    Args:
+        state: the current graph state, containing final_answer
+
+    Returns:
+        A dict with the "final_answer" key, rewritten professionally
+    """
+    system_prompt = (
+        "You are a helpful assistant. Based on the tool result provided, "
+        "write a clear, concise answer to the user's original question "
+        "and offer a suggestion if it is the case"
+    )
+    context = f"Question: {state['question']}\nTool result: {state['tool_result']}"
+    
+    answer = call_llm(system_prompt, context, task_type="writing")
+    
+    return {"final_answer": answer}
+
+
 if __name__ == "__main__":
     # Test 1: clear question
     test_state1 = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
@@ -226,17 +247,19 @@ if __name__ == "__main__":
     workflow.add_node("rag", rag_node)
     workflow.add_node("metrics", wfm_metrics_node)
     workflow.add_node("extractor", extract_wfm_params_node)
+    workflow.add_node("writer", format_answer_node)
 
     workflow.add_edge(START, "supervisor")
     workflow.add_edge("rag", "supervisor")
     workflow.add_edge("metrics", "supervisor")
     workflow.add_edge("extractor", "supervisor")
+    workflow.add_edge("writer", END)
 
     workflow.add_conditional_edges("supervisor", route_from_supervisor, {
-        "rag": "rag",
-        "extractor": "extractor",
-        "metrics": "metrics",
-        "done": END
+    "rag": "rag",
+    "extractor": "extractor",
+    "metrics": "metrics",
+    "done": "writer"
     })
 
     graph = workflow.compile()
