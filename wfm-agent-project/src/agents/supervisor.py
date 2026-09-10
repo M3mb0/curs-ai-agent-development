@@ -24,6 +24,11 @@ class State(TypedDict):
     language: str
     lob: str
     date: str
+    date2: str
+    target_volume: int
+    weekday: str
+    offset_hours: int
+    column_name: str
 
 
 # --- LLM infrastructure ---
