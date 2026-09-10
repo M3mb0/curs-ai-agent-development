@@ -37,8 +37,8 @@ def route_by_complexity(task_type: str) -> str:
     Returns:
         The most cost-effective model name for the given task type
     """
-    simple_tasks = ["classification", "routing", "extraction"]
-    complex_tasks = ["analysis", "reasoning", "writing"]
+    simple_tasks = ["classification", "routing", "extraction", "writing"]
+    complex_tasks = ["analysis", "reasoning", "complex_writing"]
 
     if task_type in simple_tasks:
         return "gemini-3.5-flash-lite"
