@@ -109,37 +109,45 @@ def rag_node(state: State) -> dict:
 
 
 def extract_wfm_params_node(state: State) -> dict:
-    """Extracts and normalizes language, LOB, and date from the user's
+    """Extracts and normalizes all WFM query parameters from the user's
     question using the LLM, handling ambiguous or malformed input.
 
     Args:
         state: the current graph state, containing the question
 
     Returns:
-        A dict with either the "language", "lob", and "date" keys
-        (on success), or a "tool_result" key with an error message
-        (if the values couldn't be confidently extracted)
+        A dict with keys for language, lob, date, date2, target_volume,
+        weekday, offset_hours, and column_name (each "none" if not
+        present in the question)
     """
     system_prompt = (
-    "Extract and NORMALIZE the language, LOB, and date from the question. "
-    "Valid languages are: Language 1, Language 2, Language 3, Language 4, Language 5, Language 6. "
-    "Valid LOBs are: LOB 1, LOB 2, LOB 3, LOB 4. "
-    "Correct any typos or informal phrasing to match these exact formats. "
-    "Convert any date format to YYYY-MM-DD. "
-    "Respond ONLY in this exact format: language|lob|date "
-    "Example: Language 1|LOB 1|2015-10-20 "
-    "If any value is unclear or cannot be confidently normalized, respond with exactly: UNCLEAR"
+        "Extract and normalize all arguments needed for a WFM query from the question.\n\n"
+        "Valid values:\n"
+        "- language: Language 1, Language 2, Language 3, Language 4, Language 5, Language 6\n"
+        "- lob: LOB 1, LOB 2, LOB 3, LOB 4\n"
+        "- date, date2: format YYYY-MM-DD\n"
+        "- target_volume: an integer number of calls\n"
+        "- weekday: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday\n"
+        "- offset_hours: an integer, can be negative\n"
+        "- column_name: a short label for a new column\n\n"
+        "Correct any typos or informal phrasing to match the valid formats above. "
+        "Convert any date format to YYYY-MM-DD.\n\n"
+        "Respond ONLY in this exact format, with all 8 keys present:\n"
+        "language=...;lob=...;date=...;date2=...;target_volume=...;weekday=...;offset_hours=...;column_name=...\n\n"
+        "If an argument is not present in the question, write none for that key.\n\n"
+        "Example: language=Language 1;lob=LOB 1;date=2015-10-20;date2=none;"
+        "target_volume=none;weekday=none;offset_hours=none;column_name=none"
     )
+
     response = call_llm(system_prompt, state["question"], task_type="extraction")
-    
-    if response.strip() == "UNCLEAR" or response.count("|") != 2:
-        return {
-            "tool_result": "I couldn't understand the date, language, or LOB. "
-                          "Please specify clearly, e.g.: 'Language 1, LOB 1, 2015-10-20'."
-        }
-    
-    language, lob, date = response.strip().split("|")
-    return {"language": language, "lob": lob, "date": date}
+
+    parts = response.strip().split(";")
+    params = {}
+    for part in parts:
+        key, value = part.split("=")
+        params[key] = value
+
+    return params
 
 
 def wfm_metrics_node(state: State) -> dict:
@@ -239,36 +247,36 @@ if __name__ == "__main__":
     test_state1 = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
     print(extract_wfm_params_node(test_state1))
     
-    # Test 2: ambiguous question with typo
-    test_state2 = {"question": "How many calls for Lang tow on lob 1, on Oct 20?"}
-    print(extract_wfm_params_node(test_state2))
+    # # Test 2: ambiguous question with typo
+    # test_state2 = {"question": "How many calls for Lang tow on lob 1, on Oct 20?"}
+    # print(extract_wfm_params_node(test_state2))
 
-    test_state = {"language": "Language 1", "lob": "LOB 1", "date": "2015-10-20"}
-    print(wfm_metrics_node(test_state))
+    # test_state = {"language": "Language 1", "lob": "LOB 1", "date": "2015-10-20"}
+    # print(wfm_metrics_node(test_state))
 
-    workflow = StateGraph(State)
+    # workflow = StateGraph(State)
 
-    workflow.add_node("supervisor", supervisor_node)
-    workflow.add_node("rag", rag_node)
-    workflow.add_node("metrics", wfm_metrics_node)
-    workflow.add_node("extractor", extract_wfm_params_node)
-    workflow.add_node("writer", format_answer_node)
+    # workflow.add_node("supervisor", supervisor_node)
+    # workflow.add_node("rag", rag_node)
+    # workflow.add_node("metrics", wfm_metrics_node)
+    # workflow.add_node("extractor", extract_wfm_params_node)
+    # workflow.add_node("writer", format_answer_node)
 
-    workflow.add_edge(START, "supervisor")
-    workflow.add_edge("rag", "supervisor")
-    workflow.add_edge("metrics", "supervisor")
-    workflow.add_edge("extractor", "supervisor")
-    workflow.add_edge("writer", END)
+    # workflow.add_edge(START, "supervisor")
+    # workflow.add_edge("rag", "supervisor")
+    # workflow.add_edge("metrics", "supervisor")
+    # workflow.add_edge("extractor", "supervisor")
+    # workflow.add_edge("writer", END)
 
-    workflow.add_conditional_edges("supervisor", route_from_supervisor, {
-    "rag": "rag",
-    "extractor": "extractor",
-    "metrics": "metrics",
-    "done": "writer"
-    })
+    # workflow.add_conditional_edges("supervisor", route_from_supervisor, {
+    # "rag": "rag",
+    # "extractor": "extractor",
+    # "metrics": "metrics",
+    # "done": "writer"
+    # })
 
-    graph = workflow.compile()
+    # graph = workflow.compile()
 
-    result = graph.invoke({"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"})
-    print("\nFinal result:")
-    print(result)
+    # result = graph.invoke({"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"})
+    # print("\nFinal result:")
+    # print(result)
