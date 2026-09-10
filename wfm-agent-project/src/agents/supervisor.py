@@ -249,23 +249,36 @@ def route_from_supervisor(state: State) -> str:
 
 
 def format_answer_node(state: State) -> dict:
-    """Turns the analysis into a polished, professional message.
-    
+    """Formulates a clear, professional answer based on the tool result.
+
     Args:
-        state: the current graph state, containing final_answer
+        state: the current graph state, containing question and all
+            normalized parameters, plus tool_result
 
     Returns:
-        A dict with the "final_answer" key, rewritten professionally
+        A dict with the "final_answer" key
     """
     system_prompt = (
-        "You are a helpful assistant. Based on the tool result provided, "
-        "write a clear, concise answer to the user's original question "
-        "and offer a suggestion if it is the case"
+    "You are a helpful assistant. Based on the tool result provided, "
+    "write a clear, concise answer to the user's original question "
+    "and offer a suggestion if it is the case. "
+    "Use the normalized Language and LOB values provided below, "
+    "not the possibly misspelled ones from the original question."
     )
-    context = f"Question: {state['question']}\nTool result: {state['tool_result']}"
     
+    context = f"Question: {state['question']}\n"
+    context += f"Language: {state.get('language', 'none')}\n"
+    context += f"LOB: {state.get('lob', 'none')}\n"
+    context += f"Date: {state.get('date', 'none')}\n"
+    context += f"Date2: {state.get('date2', 'none')}\n"
+    context += f"Target volume: {state.get('target_volume', 'none')}\n"
+    context += f"Weekday: {state.get('weekday', 'none')}\n"
+    context += f"Offset hours: {state.get('offset_hours', 'none')}\n"
+    context += f"Column name: {state.get('column_name', 'none')}\n"
+    context += f"Tool result: {state['tool_result']}"
+
     answer = call_llm(system_prompt, context, task_type="writing")
-    
+
     return {"final_answer": answer}
 
 
