@@ -146,7 +146,7 @@ def extract_wfm_params_node(state: State) -> dict:
     for part in parts:
         key, value = part.split("=")
         params[key] = value
-
+    # print(f"[DEBUG-EXTRACT] params={params}")
     return params
 
 
@@ -221,18 +221,21 @@ def supervisor_node(state: State) -> dict:
         "extractor (extracts query parameters from a WFM-related question), "
         "metrics (retrieves call metrics: offered, handled, abandoned), "
         "service_level (retrieves service level % and abandon rate %), "
-        "talktime (retrieves total talk time for a date range), " 
+        "talktime (retrieves total talk time for a date range), "
         "done (task complete, ready to answer).\n\n"
         "If the question is about company procedures or definitions, choose rag. "
-        "If the question is about WFM data and the parameters have NOT been "
-        "extracted yet, choose extractor. "
-        "If the question is about total talk time over a period, choose talktime."
+        "If the question is about WFM data and language, lob, AND date are "
+        "ALL still 'none', choose extractor. "
+        "Note: fields like date2, target_volume, weekday, offset_hours, and "
+        "column_name will naturally be 'none' if not relevant to the question "
+        "- this is expected and does NOT mean extraction failed.\n"
+        "If the question is about total talk time over a period, choose talktime. "
         "If parameters are already extracted and the question is about raw "
         "call counts (offered, handled, abandoned), choose metrics. "
         "If parameters are already extracted and the question is about "
         "service level or abandon rate percentages, choose service_level. "
         "If you already have a tool result, choose done.\n\n"
-        "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, or done."
+        "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, talktime, or done."
     )
 
     context = f"Question: {state['question']}\n"
@@ -300,7 +303,7 @@ def format_answer_node(state: State) -> dict:
     context += f"Weekday: {state.get('weekday', 'none')}\n"
     context += f"Offset hours: {state.get('offset_hours', 'none')}\n"
     context += f"Column name: {state.get('column_name', 'none')}\n"
-    context += f"Tool result: {state['tool_result']}"
+    context += f"Tool result: {state.get('tool_result', 'No tool result available.')}"
 
     answer = call_llm(system_prompt, context, task_type="writing")
 
@@ -352,8 +355,8 @@ if __name__ == "__main__":
     # print("\nFinal result:")
     # print(result)
 
-    # result = graph.invoke({"question": "What's the service level for Lungage tow on lob 3, on 2015-10-20?"})
-    # print(result)
-
-    result = graph.invoke({"question": "What's the total talk time for Language 1 on LOB 1, between 2015-10-14 and 2015-10-20?"})
+    result = graph.invoke({"question": "What's the service level for Lungage tow on lob 3, on 2015-10-20?"})
     print(result)
+
+    # result = graph.invoke({"question": "What's the total talk time for Language 1 on LOB 1, between 2015-10-14 and 2015-10-20?"})
+    # print(result)
