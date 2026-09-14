@@ -8,7 +8,7 @@ from rag.search import search, cached_search
 from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config import GEMINI_API_KEY
-from tools.wfm_data import load_wfm_data, get_daily_metrics, calculate_service_level
+from tools.wfm_data import load_wfm_data, get_daily_metrics, calculate_service_level, get_talktime_by_period
 from google.genai.types import AutomaticFunctionCallingConfig
 
 
@@ -186,6 +186,26 @@ def service_level_node(state: State) -> dict:
     return {"tool_result": combined_text}
 
 
+def talktime_node(state: State) -> dict:
+    """Retrieves the total talk time for a period and formats it as text.
+
+    Args:
+        state: the current graph state, containing language, lob, date,
+            and date2
+
+    Returns:
+        A dict with the "tool_result" key, containing the formatted metrics
+    """
+    result = get_talktime_by_period(df, state["language"], state["lob"], state["date"], state["date2"])
+
+    combined_text = ""
+    for key, value in result.items():
+        combined_text += f"{key}: {value}\n"
+
+    return {"tool_result": combined_text}
+
+
+
 def supervisor_node(state: State) -> dict:
     """Decides which specialist should act next, based on current state.
 
@@ -201,10 +221,12 @@ def supervisor_node(state: State) -> dict:
         "extractor (extracts query parameters from a WFM-related question), "
         "metrics (retrieves call metrics: offered, handled, abandoned), "
         "service_level (retrieves service level % and abandon rate %), "
+        "talktime (retrieves total talk time for a date range), " 
         "done (task complete, ready to answer).\n\n"
         "If the question is about company procedures or definitions, choose rag. "
         "If the question is about WFM data and the parameters have NOT been "
         "extracted yet, choose extractor. "
+        "If the question is about total talk time over a period, choose talktime."
         "If parameters are already extracted and the question is about raw "
         "call counts (offered, handled, abandoned), choose metrics. "
         "If parameters are already extracted and the question is about "
@@ -245,6 +267,7 @@ def route_from_supervisor(state: State) -> str:
     Returns:
         The name of the next node
     """
+    # print(f"[DEBUG] Routing decision: '{state['next_step']}'")
     return state["next_step"]
 
 
@@ -263,7 +286,9 @@ def format_answer_node(state: State) -> dict:
     "write a clear, concise answer to the user's original question "
     "and offer a suggestion if it is the case. "
     "Use the normalized Language and LOB values provided below, "
-    "not the possibly misspelled ones from the original question."
+    "not the possibly misspelled ones from the original question." 
+    "If, the user wrotes a wrong word like, laguage, instead of language,  " 
+    "when you answer please use the correct word"
     )
     
     context = f"Question: {state['question']}\n"
@@ -283,16 +308,16 @@ def format_answer_node(state: State) -> dict:
 
 
 if __name__ == "__main__":
-    # Test 1: clear question
-    test_state1 = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
-    print(extract_wfm_params_node(test_state1))
+    # # Test 1: clear question
+    # test_state1 = {"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"}
+    # print(extract_wfm_params_node(test_state1))
     
-    # Test 2: ambiguous question with typo
-    test_state2 = {"question": "How many calls for Lang tow on lob 1, on Oct 20?"}
-    print(extract_wfm_params_node(test_state2))
+    # # Test 2: ambiguous question with typo
+    # test_state2 = {"question": "How many calls for Lang tow on lob 1, on Oct 20?"}
+    # print(extract_wfm_params_node(test_state2))
 
-    test_state = {"language": "Language 1", "lob": "LOB 1", "date": "2015-10-20"}
-    print(wfm_metrics_node(test_state))
+    # test_state = {"language": "Language 1", "lob": "LOB 1", "date": "2015-10-20"}
+    # print(wfm_metrics_node(test_state))
 
     workflow = StateGraph(State)
 
@@ -300,6 +325,7 @@ if __name__ == "__main__":
     workflow.add_node("rag", rag_node)
     workflow.add_node("metrics", wfm_metrics_node)
     workflow.add_node("service_level", service_level_node)
+    workflow.add_node("talktime", talktime_node)
     workflow.add_node("extractor", extract_wfm_params_node)
     workflow.add_node("writer", format_answer_node)
 
@@ -307,6 +333,7 @@ if __name__ == "__main__":
     workflow.add_edge("rag", "supervisor")
     workflow.add_edge("metrics", "supervisor")
     workflow.add_edge("service_level", "supervisor")
+    workflow.add_edge("talktime", "supervisor")
     workflow.add_edge("extractor", "supervisor")
     workflow.add_edge("writer", END)
 
@@ -315,6 +342,7 @@ if __name__ == "__main__":
         "extractor": "extractor",
         "metrics": "metrics",
         "service_level": "service_level",
+        "talktime":"talktime",
         "done": "writer"
     })
 
@@ -324,5 +352,8 @@ if __name__ == "__main__":
     # print("\nFinal result:")
     # print(result)
 
-    result = graph.invoke({"question": "What's the service level for Lungage tow on lob 3, on 2015-10-20?"})
+    # result = graph.invoke({"question": "What's the service level for Lungage tow on lob 3, on 2015-10-20?"})
+    # print(result)
+
+    result = graph.invoke({"question": "What's the total talk time for Language 1 on LOB 1, between 2015-10-14 and 2015-10-20?"})
     print(result)
