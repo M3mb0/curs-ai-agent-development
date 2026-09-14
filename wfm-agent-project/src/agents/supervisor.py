@@ -8,7 +8,18 @@ from rag.search import search, cached_search
 from langgraph.graph import StateGraph, START, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config import GEMINI_API_KEY
-from tools.wfm_data import load_wfm_data, get_daily_metrics, calculate_service_level, get_talktime_by_period
+from tools.wfm_data import (
+    load_wfm_data,
+    get_daily_metrics,
+    calculate_service_level,
+    get_talktime_by_period,
+    compare_two_days,
+    forecast_by_pattern,
+    forecast_by_weekday_pattern,
+    get_monthly_distribution_by_language,
+    plot_language_distribution,
+    add_timezone_column
+)
 from google.genai.types import AutomaticFunctionCallingConfig
 
 
@@ -205,6 +216,115 @@ def talktime_node(state: State) -> dict:
     return {"tool_result": combined_text}
 
 
+def compare_days_node(state: State) -> dict:
+    """Compares WFM metrics between two days and formats the result as text.
+
+    Args:
+        state: the current graph state, containing language, lob, date,
+            and date2
+
+    Returns:
+        A dict with the "tool_result" key, containing the comparison
+    """
+    result = compare_two_days(df, state["language"], state["lob"], state["date"], state["date2"])
+
+    combined_text = ""
+    for key, value in result.items():
+        combined_text += f"{key}: {value}\n"
+
+    return {"tool_result": combined_text}
+
+
+def forecast_node(state: State) -> dict:
+    """Forecasts call volume distribution for a historical date, formatted as text.
+
+    Args:
+        state: the current graph state, containing language, lob, date,
+            and target_volume
+
+    Returns:
+        A dict with the "tool_result" key, containing the forecast
+    """
+    target_volume = int(state["target_volume"])
+    result = forecast_by_pattern(df, state["language"], state["lob"], state["date"], target_volume)
+
+    combined_text = ""
+    for key, value in result.items():
+        combined_text += f"{key}: {value}\n"
+
+    return {"tool_result": combined_text}
+
+
+def forecast_weekday_node(state: State) -> dict:
+    """Forecasts call volume distribution based on a weekday's pattern, formatted as text.
+
+    Args:
+        state: the current graph state, containing language, lob, weekday,
+            and target_volume
+
+    Returns:
+        A dict with the "tool_result" key, containing the forecast
+    """
+    target_volume = int(state["target_volume"])
+    result = forecast_by_weekday_pattern(df, state["language"], state["lob"], state["weekday"], target_volume)
+
+    combined_text = ""
+    for key, value in result.items():
+        combined_text += f"{key}: {value}\n"
+
+    return {"tool_result": combined_text}
+
+
+def distribution_node(state: State) -> dict:
+    """Calculates monthly call distribution by language, generates a
+    chart, and formats the result as text.
+
+    Args:
+        state: the current graph state, containing lob
+
+    Returns:
+        A dict with the "tool_result" key, containing the distribution
+        and a note about the saved chart
+    """
+    result = get_monthly_distribution_by_language(df, state["lob"])
+
+    output_dir = Path(__file__).parent.parent.parent / "data"
+    chart_path = str(output_dir / "language_distribution.png")
+    plot_language_distribution(result, chart_path)
+
+    combined_text = ""
+    for key, value in result.items():
+        combined_text += f"{key}: {value}%\n"
+    combined_text += f"\nA chart has been saved to: {chart_path}"
+
+    return {"tool_result": combined_text}
+
+
+def timezone_node(state: State) -> dict:
+    """Adds a timezone-shifted column and formats a sample as text.
+
+    Args:
+        state: the current graph state, containing offset_hours and
+            column_name
+
+    Returns:
+        A dict with the "tool_result" key, containing a sample of the
+        shifted times
+    """
+    offset_hours = int(state["offset_hours"])
+    column_name = state["column_name"]
+
+    updated_df = add_timezone_column(df, offset_hours, column_name)
+
+    sample = updated_df[["Intvl_UTC", column_name]].drop_duplicates().head(10)
+
+    combined_text = ""
+    for _, row in sample.iterrows():
+        combined_text += f"{row['Intvl_UTC']} -> {row[column_name]}\n"
+
+    return {"tool_result": combined_text}
+
+
 
 def supervisor_node(state: State) -> dict:
     """Decides which specialist should act next, based on current state.
@@ -222,20 +342,39 @@ def supervisor_node(state: State) -> dict:
         "metrics (retrieves call metrics: offered, handled, abandoned), "
         "service_level (retrieves service level % and abandon rate %), "
         "talktime (retrieves total talk time for a date range), "
+        "compare_days (retrieves comparison of WFM metrics between two days), "
+        "forecast (retrieves the forecasted call volume), "
+        "forecast_weekday (retrieves the forecasted call volume, based on a weekday, like Monday, Tuesday, etc), "
+        "distribution (retrieves monthly call distribution percentage by language, with a chart), "
+        "timezone (shifts call times by a given offset, e.g. UTC-4), "
         "done (task complete, ready to answer).\n\n"
         "If the question is about company procedures or definitions, choose rag. "
-        "If the question is about WFM data and language, lob, AND date are "
-        "ALL still 'none', choose extractor. "
-        "Note: fields like date2, target_volume, weekday, offset_hours, and "
+        "If the question is about WFM data and lob is still 'none', choose extractor. "
+        "Note: fields like date, date2, target_volume, weekday, offset_hours, and "
         "column_name will naturally be 'none' if not relevant to the question "
-        "- this is expected and does NOT mean extraction failed.\n"
+        "- this is expected and does NOT mean extraction failed. Only lob is "
+        "always required; other fields depend on the specific question type.\n"
+        "For distribution questions, only LOB is needed - language and date "
+        "being 'none' is expected and normal for this type of question. Once "
+        "lob is extracted, proceed directly to distribution.\n"
         "If the question is about total talk time over a period, choose talktime. "
         "If parameters are already extracted and the question is about raw "
         "call counts (offered, handled, abandoned), choose metrics. "
         "If parameters are already extracted and the question is about "
         "service level or abandon rate percentages, choose service_level. "
+        "If parameters are already extracted and the question compares two "
+        "specific dates, choose compare_days. "
+        "If parameters are already extracted and the question forecasts based on "
+        "a specific historical DATE (e.g. '2015-10-20'), choose forecast. "
+        "If parameters are already extracted and the question forecasts based on "
+        "a WEEKDAY pattern (e.g. 'Monday'), choose forecast_weekday. "
+        "If parameters are already extracted and the question asks about the "
+        "percentage distribution of calls across languages, choose distribution. "
+        "If parameters are already extracted and the question asks to convert "
+        "or shift times to a different timezone/offset, choose timezone. "
         "If you already have a tool result, choose done.\n\n"
-        "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, talktime, or done."
+        "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, talktime,"
+        "compare_days, forecast, forecast_weekday, distribution, timezone or done."
     )
 
     context = f"Question: {state['question']}\n"
@@ -329,6 +468,11 @@ if __name__ == "__main__":
     workflow.add_node("metrics", wfm_metrics_node)
     workflow.add_node("service_level", service_level_node)
     workflow.add_node("talktime", talktime_node)
+    workflow.add_node("compare_days", compare_days_node)
+    workflow.add_node("forecast", forecast_node)
+    workflow.add_node("forecast_weekday", forecast_weekday_node)
+    workflow.add_node("distribution", distribution_node)
+    workflow.add_node("timezone", timezone_node)
     workflow.add_node("extractor", extract_wfm_params_node)
     workflow.add_node("writer", format_answer_node)
 
@@ -337,6 +481,11 @@ if __name__ == "__main__":
     workflow.add_edge("metrics", "supervisor")
     workflow.add_edge("service_level", "supervisor")
     workflow.add_edge("talktime", "supervisor")
+    workflow.add_edge("compare_days", "supervisor")
+    workflow.add_edge("forecast", "supervisor")
+    workflow.add_edge("forecast_weekday", "supervisor")
+    workflow.add_edge("distribution", "supervisor")
+    workflow.add_edge("timezone", "supervisor")
     workflow.add_edge("extractor", "supervisor")
     workflow.add_edge("writer", END)
 
@@ -345,7 +494,12 @@ if __name__ == "__main__":
         "extractor": "extractor",
         "metrics": "metrics",
         "service_level": "service_level",
-        "talktime":"talktime",
+        "talktime": "talktime",
+        "compare_days": "compare_days",
+        "forecast": "forecast",
+        "forecast_weekday": "forecast_weekday",
+        "distribution": "distribution",
+        "timezone": "timezone",
         "done": "writer"
     })
 
@@ -355,8 +509,23 @@ if __name__ == "__main__":
     # print("\nFinal result:")
     # print(result)
 
-    result = graph.invoke({"question": "What's the service level for Lungage tow on lob 3, on 2015-10-20?"})
-    print(result)
+    # result = graph.invoke({"question": "What's the service level for Lungage tow on lob 3, on 2015-10-20?"})
+    # print(result)
 
     # result = graph.invoke({"question": "What's the total talk time for Language 1 on LOB 1, between 2015-10-14 and 2015-10-20?"})
     # print(result)
+
+    # result = graph.invoke({"question": "Compare Language 1 on LOB 1 between 2015-10-20 and 2015-10-21"})
+    # print(result)
+
+    # result = graph.invoke({"question": "Forecast 500 calls for Language 1 on LOB 1 based on 2015-10-20 pattern"})
+    # print(result["final_answer"])
+
+    # result = graph.invoke({"question": "Forecast 1200 calls for Language 2 on LOB 1 based on Monday pattern"})
+    # print(result["final_answer"])
+
+    # result = graph.invoke({"question": "What's the call distribution by language for LOB 2?"})
+    # print(result["final_answer"])
+
+    result = graph.invoke({"question": "Show me the call times shifted by UTC-4, name the column utc_minus_4"})
+    print(result["final_answer"])
