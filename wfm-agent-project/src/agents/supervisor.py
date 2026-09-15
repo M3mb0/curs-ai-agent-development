@@ -20,10 +20,22 @@ from tools.wfm_data import (
     plot_language_distribution,
     add_timezone_column
 )
+from tools.capacity_planning import (
+    load_arrival_pattern,
+    SHIFTS,
+    distribute_breaks_all_shifts,
+    distribute_breaks_all_shifts_with_meetings,
+    aggregate_breaks_by_interval,
+    calculate_staffing,
+    load_site_params,
+    calculate_capacity,
+)
 from google.genai.types import AutomaticFunctionCallingConfig
 
 
 df = load_wfm_data("wfm-agent-project/data/wfm.xlsx")
+arrival_pattern = load_arrival_pattern("wfm-agent-project/data/wfm.xlsx")
+site_params = load_site_params("wfm-agent-project/data/wfm.xlsx")
 
 
 class State(TypedDict):
@@ -40,6 +52,7 @@ class State(TypedDict):
     weekday: str
     offset_hours: int
     column_name: str
+    meeting_times: str
 
 
 # --- LLM infrastructure ---
@@ -128,8 +141,8 @@ def extract_wfm_params_node(state: State) -> dict:
 
     Returns:
         A dict with keys for language, lob, date, date2, target_volume,
-        weekday, offset_hours, and column_name (each "none" if not
-        present in the question)
+        weekday, offset_hours, column_name, and meeting_times (each "none"
+        if not present in the question)
     """
     system_prompt = (
         "Extract and normalize all arguments needed for a WFM query from the question.\n\n"
@@ -140,14 +153,20 @@ def extract_wfm_params_node(state: State) -> dict:
         "- target_volume: an integer number of calls\n"
         "- weekday: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday\n"
         "- offset_hours: an integer, can be negative\n"
+        "- meeting_times: comma-separated list of HH:MM-HH:MM ranges (24-hour "
+        "format), e.g. 09:00-10:30,15:00-16:30. Convert casual time references "
+        "intelligently: '9-10' with no AM/PM specified defaults to AM. Numbers "
+        "13-23 are automatically PM. 'morning' means AM, 'afternoon'/'evening'/"
+        "'night' means PM. Examples: '9 morning' = 09:00, '10 afternoon' = 22:00, "
+        "'4-6 afternoon' = 16:00-18:00.\n"
         "- column_name: a short label for a new column\n\n"
         "Correct any typos or informal phrasing to match the valid formats above. "
         "Convert any date format to YYYY-MM-DD.\n\n"
-        "Respond ONLY in this exact format, with all 8 keys present:\n"
-        "language=...;lob=...;date=...;date2=...;target_volume=...;weekday=...;offset_hours=...;column_name=...\n\n"
+        "Respond ONLY in this exact format, with all 9 keys present:\n"
+        "language=...;lob=...;date=...;date2=...;target_volume=...;weekday=...;offset_hours=...;column_name=...;meeting_times=...\n\n"
         "If an argument is not present in the question, write none for that key.\n\n"
         "Example: language=Language 1;lob=LOB 1;date=2015-10-20;date2=none;"
-        "target_volume=none;weekday=none;offset_hours=none;column_name=none"
+        "target_volume=none;weekday=none;offset_hours=none;column_name=none;meeting_times=none"
     )
 
     response = call_llm(system_prompt, state["question"], task_type="extraction")
@@ -325,6 +344,60 @@ def timezone_node(state: State) -> dict:
     return {"tool_result": combined_text}
 
 
+def breaks_node(state: State) -> dict:
+    """Distributes break minutes across all shifts (without meeting
+    exclusions) and formats the aggregated result as text.
+
+    Args:
+        state: the current graph state (not used directly, breaks are
+            calculated from the fixed shift schedule)
+
+    Returns:
+        A dict with the "tool_result" key, containing break allocation
+        per interval
+    """
+    all_breaks = distribute_breaks_all_shifts(arrival_pattern, SHIFTS)
+    aggregated = aggregate_breaks_by_interval(all_breaks)
+
+    combined_text = ""
+    for key, value in aggregated.items():
+        combined_text += f"{key}: {round(value)} agents on break\n"
+
+    return {"tool_result": combined_text}
+
+
+def breaks_with_meetings_node(state: State) -> dict:
+    """Distributes break minutes across all shifts, excluding team
+    meeting times, and formats the aggregated result as text.
+
+    Args:
+        state: the current graph state, containing meeting_times (a string
+        with comma-separated HH:MM-HH:MM ranges, or "none" for default
+        meeting times)
+
+    Returns:
+        A dict with the "tool_result" key, containing break allocation
+        per interval
+    """
+    meeting_str = state.get("meeting_times", "none")
+
+    if meeting_str == "none":
+        meetings = [("09:00", "10:30"), ("15:00", "16:30")]
+    else:
+        meetings = []
+        for interval in meeting_str.split(","):
+            start, end = interval.split("-")
+            meetings.append((start, end))
+
+    all_breaks = distribute_breaks_all_shifts_with_meetings(arrival_pattern, SHIFTS, meetings)
+    aggregated = aggregate_breaks_by_interval(all_breaks)
+
+    combined_text = ""
+    for key, value in aggregated.items():
+        combined_text += f"{key}: {round(value)} agents on break\n"
+
+    return {"tool_result": combined_text}
+
 
 def supervisor_node(state: State) -> dict:
     """Decides which specialist should act next, based on current state.
@@ -372,9 +445,13 @@ def supervisor_node(state: State) -> dict:
         "percentage distribution of calls across languages, choose distribution. "
         "If parameters are already extracted and the question asks to convert "
         "or shift times to a different timezone/offset, choose timezone. "
+        "If the question is about break distribution WITHOUT mentioning team "
+        "meetings, choose breaks. "
+        "If the question specifically mentions team meetings or asks to exclude "
+        "meeting times from break planning, choose breaks_meetings. "
         "If you already have a tool result, choose done.\n\n"
         "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, talktime,"
-        "compare_days, forecast, forecast_weekday, distribution, timezone or done."
+        "compare_days, forecast, forecast_weekday, distribution, timezone, breaks, breaks_meetings or done."
     )
 
     context = f"Question: {state['question']}\n"
@@ -431,6 +508,9 @@ def format_answer_node(state: State) -> dict:
     "not the possibly misspelled ones from the original question." 
     "If, the user wrotes a wrong word like, laguage, instead of language,  " 
     "when you answer please use the correct word"
+    "If the tool result is about staffing or break distribution, explain "
+    "clearly what the numbers mean and proactively flag any intervals where "
+    "coverage seems low, suggesting additional staffing if relevant."
     )
     
     context = f"Question: {state['question']}\n"
@@ -473,6 +553,8 @@ if __name__ == "__main__":
     workflow.add_node("forecast_weekday", forecast_weekday_node)
     workflow.add_node("distribution", distribution_node)
     workflow.add_node("timezone", timezone_node)
+    workflow.add_node("breaks", breaks_node)
+    workflow.add_node("breaks_meetings", breaks_with_meetings_node)
     workflow.add_node("extractor", extract_wfm_params_node)
     workflow.add_node("writer", format_answer_node)
 
@@ -486,6 +568,8 @@ if __name__ == "__main__":
     workflow.add_edge("forecast_weekday", "supervisor")
     workflow.add_edge("distribution", "supervisor")
     workflow.add_edge("timezone", "supervisor")
+    workflow.add_edge("breaks", "supervisor")
+    workflow.add_edge("breaks_meetings", "supervisor")
     workflow.add_edge("extractor", "supervisor")
     workflow.add_edge("writer", END)
 
@@ -500,6 +584,8 @@ if __name__ == "__main__":
         "forecast_weekday": "forecast_weekday",
         "distribution": "distribution",
         "timezone": "timezone",
+        "breaks": "breaks",
+        "breaks_meetings": "breaks_meetings",
         "done": "writer"
     })
 
@@ -527,5 +613,11 @@ if __name__ == "__main__":
     # result = graph.invoke({"question": "What's the call distribution by language for LOB 2?"})
     # print(result["final_answer"])
 
-    result = graph.invoke({"question": "Show me the call times shifted by UTC-4, name the column utc_minus_4"})
-    print(result["final_answer"])
+    # result = graph.invoke({"question": "Show me the call times shifted by UTC-4, name the column utc_minus_4"})
+    # print(result["final_answer"])
+
+    result1 = graph.invoke({"question": "How are breaks distributed, considering team meetings between 9-10 and 15-16?"})
+    print("Test 1:", result1["final_answer"])
+
+    result2 = graph.invoke({"question": "How are breaks distributed, with meetings from 9 morning to 10 morning and 4 to 6 afternoon?"})
+    print("Test 2:", result2["final_answer"])
