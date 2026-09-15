@@ -346,38 +346,43 @@ def timezone_node(state: State) -> dict:
 
 def breaks_node(state: State) -> dict:
     """Distributes break minutes across all shifts (without meeting
-    exclusions) and formats the aggregated result as text.
+    exclusions) and formats the result as text, including call volume
+    for context.
 
     Args:
         state: the current graph state (not used directly, breaks are
             calculated from the fixed shift schedule)
 
     Returns:
-        A dict with the "tool_result" key, containing break allocation
-        per interval
+        A dict with the "tool_result" key, containing call volume and
+        break allocation per interval
     """
     all_breaks = distribute_breaks_all_shifts(arrival_pattern, SHIFTS)
     aggregated = aggregate_breaks_by_interval(all_breaks)
 
     combined_text = ""
-    for key, value in aggregated.items():
-        combined_text += f"{key}: {round(value)} agents on break\n"
+    for _, row in arrival_pattern.iterrows():
+        hour_str = str(row["hour"])
+        calls = row["offered_calls"]
+        breaks = round(aggregated.get(hour_str, 0))
+        combined_text += f"{hour_str}: {calls} calls offered, {breaks} agents on break\n"
 
     return {"tool_result": combined_text}
 
 
 def breaks_with_meetings_node(state: State) -> dict:
     """Distributes break minutes across all shifts, excluding team
-    meeting times, and formats the aggregated result as text.
+    meeting times, and formats the result as text, including call
+    volume for context.
 
     Args:
-        state: the current graph state, containing meeting_times (a string
-        with comma-separated HH:MM-HH:MM ranges, or "none" for default
-        meeting times)
+        state: the current graph state, containing meeting_times (a
+            string with comma-separated HH:MM-HH:MM ranges, or "none"
+            for default meeting times)
 
     Returns:
-        A dict with the "tool_result" key, containing break allocation
-        per interval
+        A dict with the "tool_result" key, containing call volume and
+        break allocation per interval
     """
     meeting_str = state.get("meeting_times", "none")
 
@@ -393,8 +398,11 @@ def breaks_with_meetings_node(state: State) -> dict:
     aggregated = aggregate_breaks_by_interval(all_breaks)
 
     combined_text = ""
-    for key, value in aggregated.items():
-        combined_text += f"{key}: {round(value)} agents on break\n"
+    for _, row in arrival_pattern.iterrows():
+        hour_str = str(row["hour"])
+        calls = row["offered_calls"]
+        breaks = round(aggregated.get(hour_str, 0))
+        combined_text += f"{hour_str}: {calls} calls offered, {breaks} agents on break\n"
 
     return {"tool_result": combined_text}
 
@@ -616,8 +624,11 @@ if __name__ == "__main__":
     # result = graph.invoke({"question": "Show me the call times shifted by UTC-4, name the column utc_minus_4"})
     # print(result["final_answer"])
 
-    result1 = graph.invoke({"question": "How are breaks distributed, considering team meetings between 9-10 and 15-16?"})
-    print("Test 1:", result1["final_answer"])
+    # result1 = graph.invoke({"question": "How are breaks distributed, considering team meetings between 9-10 and 15-16?"})
+    # print("Test 1:", result1["final_answer"])
 
     result2 = graph.invoke({"question": "How are breaks distributed, with meetings from 9 morning to 10 morning and 4 to 6 afternoon?"})
     print("Test 2:", result2["final_answer"])
+
+    result3 = graph.invoke({"question": "Show me the break schedule for all agents today"})
+    print("\nTest 3:", result3["final_answer"])
