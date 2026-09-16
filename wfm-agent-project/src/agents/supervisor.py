@@ -438,6 +438,11 @@ def supervisor_node(state: State) -> dict:
         "For distribution questions, only LOB is needed - language and date "
         "being 'none' is expected and normal for this type of question. Once "
         "lob is extracted, proceed directly to distribution.\n"
+        "Note: breaks and breaks_meetings questions do NOT strictly require "
+        "language/lob/date - if the question mentions specific meeting times, "
+        "extract those first (meeting_times field), then route to the "
+        "appropriate breaks node. If NO parameters are extractable at all, "
+        "skip extraction and route directly to breaks/breaks_meetings.\n"
         "If the question is about total talk time over a period, choose talktime. "
         "If parameters are already extracted and the question is about raw "
         "call counts (offered, handled, abandoned), choose metrics. "
@@ -627,8 +632,8 @@ if __name__ == "__main__":
     # result1 = graph.invoke({"question": "How are breaks distributed, considering team meetings between 9-10 and 15-16?"})
     # print("Test 1:", result1["final_answer"])
 
-    result2 = graph.invoke({"question": "How are breaks distributed, with meetings from 9 morning to 10 morning and 4 to 6 afternoon?"})
-    print("Test 2:", result2["final_answer"])
+    # result2 = graph.invoke({"question": "How are breaks distributed, with meetings from 9 morning to 10 morning and 4 to 6 afternoon?"})
+    # print("Test 2:", result2["final_answer"])
 
     result3 = graph.invoke({"question": "Show me the break schedule for all agents today"})
     print("\nTest 3:", result3["final_answer"])
