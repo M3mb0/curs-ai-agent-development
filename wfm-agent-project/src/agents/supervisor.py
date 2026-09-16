@@ -407,6 +407,40 @@ def breaks_with_meetings_node(state: State) -> dict:
     return {"tool_result": combined_text}
 
 
+def capacity_node(state: State) -> dict:
+    """Calculates capacity per interval based on staffing and site
+    parameters, formatted as text with call volume for context.
+
+    Args:
+        state: the current graph state, containing optional meeting_times
+
+    Returns:
+        A dict with the "tool_result" key, containing call volume and
+        capacity per interval
+    """
+    meeting_str = state.get("meeting_times", "none")
+
+    if meeting_str == "none":
+        staffing = calculate_staffing(arrival_pattern, SHIFTS)
+    else:
+        meetings = []
+        for interval in meeting_str.split(","):
+            start, end = interval.split("-")
+            meetings.append((start, end))
+        staffing = calculate_staffing(arrival_pattern, SHIFTS, meetings)
+
+    capacity = calculate_capacity(staffing, site_params)
+
+    combined_text = ""
+    for _, row in arrival_pattern.iterrows():
+        hour_str = str(row["hour"])
+        calls = row["offered_calls"]
+        cap = round(capacity.get(hour_str, 0), 2)
+        combined_text += f"{hour_str}: {calls} calls offered, {cap} capacity\n"
+
+    return {"tool_result": combined_text}
+
+
 def supervisor_node(state: State) -> dict:
     """Decides which specialist should act next, based on current state.
 
@@ -428,6 +462,9 @@ def supervisor_node(state: State) -> dict:
         "forecast_weekday (retrieves the forecasted call volume, based on a weekday, like Monday, Tuesday, etc), "
         "distribution (retrieves monthly call distribution percentage by language, with a chart), "
         "timezone (shifts call times by a given offset, e.g. UTC-4), "
+        "breaks (distributes agent break times across the day, without meeting exclusions), "
+        "breaks_meetings (distributes agent break times, excluding team meeting periods), "
+        "capacity (calculates call-handling capacity per interval, based on staffing), "
         "done (task complete, ready to answer).\n\n"
         "If the question is about company procedures or definitions, choose rag. "
         "If the question is about WFM data and lob is still 'none', choose extractor. "
@@ -462,9 +499,14 @@ def supervisor_node(state: State) -> dict:
         "meetings, choose breaks. "
         "If the question specifically mentions team meetings or asks to exclude "
         "meeting times from break planning, choose breaks_meetings. "
+        "If the question is about capacity, call-handling capability, or how "
+        "many calls can be handled per interval, choose capacity. "
+        "Note: capacity questions do NOT strictly require language/lob/date - "
+        "if meeting times are mentioned, extract those first, otherwise route "
+        "directly to capacity.\n"
         "If you already have a tool result, choose done.\n\n"
         "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, talktime,"
-        "compare_days, forecast, forecast_weekday, distribution, timezone, breaks, breaks_meetings or done."
+        "compare_days, forecast, forecast_weekday, distribution, timezone, breaks, breaks_meetings, capacity or done."
     )
 
     context = f"Question: {state['question']}\n"
@@ -568,6 +610,7 @@ if __name__ == "__main__":
     workflow.add_node("timezone", timezone_node)
     workflow.add_node("breaks", breaks_node)
     workflow.add_node("breaks_meetings", breaks_with_meetings_node)
+    workflow.add_node("capacity", capacity_node)
     workflow.add_node("extractor", extract_wfm_params_node)
     workflow.add_node("writer", format_answer_node)
 
@@ -583,6 +626,7 @@ if __name__ == "__main__":
     workflow.add_edge("timezone", "supervisor")
     workflow.add_edge("breaks", "supervisor")
     workflow.add_edge("breaks_meetings", "supervisor")
+    workflow.add_edge("capacity", "supervisor")
     workflow.add_edge("extractor", "supervisor")
     workflow.add_edge("writer", END)
 
@@ -599,6 +643,7 @@ if __name__ == "__main__":
         "timezone": "timezone",
         "breaks": "breaks",
         "breaks_meetings": "breaks_meetings",
+        "capacity": "capacity",
         "done": "writer"
     })
 
@@ -635,5 +680,8 @@ if __name__ == "__main__":
     # result2 = graph.invoke({"question": "How are breaks distributed, with meetings from 9 morning to 10 morning and 4 to 6 afternoon?"})
     # print("Test 2:", result2["final_answer"])
 
-    result3 = graph.invoke({"question": "Show me the break schedule for all agents today"})
-    print("\nTest 3:", result3["final_answer"])
+    # result3 = graph.invoke({"question": "Show me the break schedule for all agents today"})
+    # print("\nTest 3:", result3["final_answer"])
+
+    result = graph.invoke({"question": "What's our capacity to handle calls throughout the day?"})
+    print(result["final_answer"])
