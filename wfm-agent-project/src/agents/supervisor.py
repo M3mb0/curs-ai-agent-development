@@ -170,9 +170,9 @@ def extract_wfm_params_node(state: State) -> dict:
         "Example: language=Language 1;lob=LOB 1;date=2015-10-20;date2=none;"
         "target_volume=none;weekday=none;offset_hours=none;column_name=none;meeting_times=none"
     )
-    print(f"[DEBUG] State language on entry: {state.get('language', 'MISSING')}")
+    # print(f"[DEBUG] State language on entry: {state.get('language', 'MISSING')}")
     response = call_llm(system_prompt, state["question"], task_type="extraction")
-    print(f"[DEBUG] Raw LLM response: {response}")
+    # print(f"[DEBUG] Raw LLM response: {response}")
 
     parts = response.strip().split(";")
     params = {}
@@ -464,7 +464,7 @@ def supervisor_node(state: State) -> dict:
     Returns:
         A dict with the "next_step" and "iteration_count" keys
     """
-    print(f"[DEBUG-SUPER] language={state.get('language', 'MISSING')}, lob={state.get('lob', 'MISSING')}")
+    # print(f"[DEBUG-SUPER] language={state.get('language', 'MISSING')}, lob={state.get('lob', 'MISSING')}")
 
     last_tool = state.get("last_tool", "none")
     lob = state.get("lob", "none")
@@ -479,7 +479,7 @@ def supervisor_node(state: State) -> dict:
     # and the parameters are present, but no fresh result yet, go
     # straight to that same tool.
     if last_tool in tools_needing_params and lob != "none" and tool_result == "none":
-        print(f"[DEBUG-SUPER] Deterministic route to: {last_tool}")
+        # print(f"[DEBUG-SUPER] Deterministic route to: {last_tool}")
         return {"next_step": last_tool, "iteration_count": new_count}
 
     system_prompt = (
