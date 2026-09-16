@@ -451,11 +451,12 @@ def capacity_node(state: State) -> dict:
 def supervisor_node(state: State) -> dict:
     """Decides which specialist should act next, based on current state.
 
-    Uses a deterministic check first: if a tool was already used and the
-    required parameters are present but no result exists yet for the
-    current question, route directly to the same tool without asking
-    the LLM (avoids unreliable LLM routing decisions on follow-up
-    questions). Otherwise, falls back to LLM-based routing.
+    Uses a deterministic check first: if a tool that needs extracted
+    parameters was already used and those parameters are present but
+    no result exists yet for the current question, route directly to
+    the same tool without asking the LLM (avoids unreliable LLM routing
+    decisions on follow-up questions). Otherwise, falls back to
+    LLM-based routing.
 
     Args:
         state: the current graph state
@@ -471,9 +472,13 @@ def supervisor_node(state: State) -> dict:
     current_count = state.get("iteration_count", 0)
     new_count = current_count + 1
 
-    # Deterministic shortcut: if we already have a tool and parameters,
-    # but no fresh result yet, go straight to that tool.
-    if last_tool not in ("none", "") and lob != "none" and tool_result == "none":
+    tools_needing_params = ["metrics", "service_level", "talktime", "compare_days",
+                              "forecast", "forecast_weekday", "distribution", "timezone"]
+
+    # Deterministic shortcut: if we already used a parameter-based tool
+    # and the parameters are present, but no fresh result yet, go
+    # straight to that same tool.
+    if last_tool in tools_needing_params and lob != "none" and tool_result == "none":
         print(f"[DEBUG-SUPER] Deterministic route to: {last_tool}")
         return {"next_step": last_tool, "iteration_count": new_count}
 
@@ -725,9 +730,16 @@ if __name__ == "__main__":
     # result_test = graph.invoke({"question": "What's the service level for Language 1 on LOB 2, on 2015-10-20?"}, config=config_new)
     # print(result_test["final_answer"])
 
-    config = {"configurable": {"thread_id": "session-11"}}
-    result1 = graph.invoke({"question": "How many calls were offered for Language 1 on LOB 1, on 2015-10-20?"}, config=config)
+    # config = {"configurable": {"thread_id": "session-12"}}
+    # result1 = graph.invoke({"question": "How many calls were offered for Language 1 on LOB 1, on 2015-10-20?"}, config=config)
+    # print(result1["final_answer"])
+
+    # result2 = graph.invoke({"question": "What about 2015-10-21 instead?", "iteration_count": 0}, config=config)
+    # print(result2["final_answer"])
+
+    config = {"configurable": {"thread_id": "session-14"}}
+    result1 = graph.invoke({"question": "What is the SLA target for LOB 1?"}, config=config)
     print(result1["final_answer"])
 
-    result2 = graph.invoke({"question": "What about 2015-10-21 instead?", "iteration_count": 0}, config=config)
+    result2 = graph.invoke({"question": "How many calls were offered for Language 1 on LOB 1, on 2015-10-20?", "iteration_count": 0}, config=config)
     print(result2["final_answer"])
