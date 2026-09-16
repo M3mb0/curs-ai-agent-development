@@ -6,6 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from typing import TypedDict
 from rag.search import search, cached_search
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_google_genai import ChatGoogleGenerativeAI
 from config import GEMINI_API_KEY
 from tools.wfm_data import (
@@ -53,6 +54,7 @@ class State(TypedDict):
     offset_hours: int
     column_name: str
     meeting_times: str
+    last_tool: str
 
 
 # --- LLM infrastructure ---
@@ -129,7 +131,7 @@ def rag_node(state: State) -> dict:
     for text, source, chunk_index, distance in results:
         combined_text += f"{text}\n\n"
     
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "rag"}
 
 
 def extract_wfm_params_node(state: State) -> dict:
@@ -144,6 +146,7 @@ def extract_wfm_params_node(state: State) -> dict:
         weekday, offset_hours, column_name, and meeting_times (each "none"
         if not present in the question)
     """
+    print("[DEBUG] extract_wfm_params_node WAS CALLED")
     system_prompt = (
         "Extract and normalize all arguments needed for a WFM query from the question.\n\n"
         "Valid values:\n"
@@ -175,7 +178,12 @@ def extract_wfm_params_node(state: State) -> dict:
     params = {}
     for part in parts:
         key, value = part.split("=")
-        params[key] = value
+        if value == "none" and state.get(key):
+            params[key] = state[key]
+        else:
+            params[key] = value
+    params["tool_result"] = "none"
+    params["iteration_count"] = 0
     # print(f"[DEBUG-EXTRACT] params={params}")
     return params
 
@@ -195,7 +203,7 @@ def wfm_metrics_node(state: State) -> dict:
     for key, value in metrics.items():
         combined_text += f"{key}: {value}\n"
     
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "metrics"}
 
 
 def service_level_node(state: State) -> dict:
@@ -212,8 +220,8 @@ def service_level_node(state: State) -> dict:
     combined_text = ""
     for key, value in result.items():
         combined_text += f"{key}: {value}\n"
-
-    return {"tool_result": combined_text}
+    
+    return {"tool_result": combined_text, "last_tool": "service_level"}
 
 
 def talktime_node(state: State) -> dict:
@@ -232,7 +240,7 @@ def talktime_node(state: State) -> dict:
     for key, value in result.items():
         combined_text += f"{key}: {value}\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "talktime"}
 
 
 def compare_days_node(state: State) -> dict:
@@ -251,7 +259,7 @@ def compare_days_node(state: State) -> dict:
     for key, value in result.items():
         combined_text += f"{key}: {value}\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "compare_days"}
 
 
 def forecast_node(state: State) -> dict:
@@ -271,7 +279,7 @@ def forecast_node(state: State) -> dict:
     for key, value in result.items():
         combined_text += f"{key}: {value}\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "forecast"}
 
 
 def forecast_weekday_node(state: State) -> dict:
@@ -291,7 +299,7 @@ def forecast_weekday_node(state: State) -> dict:
     for key, value in result.items():
         combined_text += f"{key}: {value}\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "forecast_weekday"}
 
 
 def distribution_node(state: State) -> dict:
@@ -316,7 +324,7 @@ def distribution_node(state: State) -> dict:
         combined_text += f"{key}: {value}%\n"
     combined_text += f"\nA chart has been saved to: {chart_path}"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "distribution"}
 
 
 def timezone_node(state: State) -> dict:
@@ -341,7 +349,7 @@ def timezone_node(state: State) -> dict:
     for _, row in sample.iterrows():
         combined_text += f"{row['Intvl_UTC']} -> {row[column_name]}\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "timezone"}
 
 
 def breaks_node(state: State) -> dict:
@@ -367,7 +375,7 @@ def breaks_node(state: State) -> dict:
         breaks = round(aggregated.get(hour_str, 0))
         combined_text += f"{hour_str}: {calls} calls offered, {breaks} agents on break\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "breaks"}
 
 
 def breaks_with_meetings_node(state: State) -> dict:
@@ -404,7 +412,7 @@ def breaks_with_meetings_node(state: State) -> dict:
         breaks = round(aggregated.get(hour_str, 0))
         combined_text += f"{hour_str}: {calls} calls offered, {breaks} agents on break\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "breaks_meetings"}
 
 
 def capacity_node(state: State) -> dict:
@@ -438,7 +446,7 @@ def capacity_node(state: State) -> dict:
         cap = round(capacity.get(hour_str, 0), 2)
         combined_text += f"{hour_str}: {calls} calls offered, {cap} capacity\n"
 
-    return {"tool_result": combined_text}
+    return {"tool_result": combined_text, "last_tool": "capacity"}
 
 
 def supervisor_node(state: State) -> dict:
@@ -504,6 +512,11 @@ def supervisor_node(state: State) -> dict:
         "Note: capacity questions do NOT strictly require language/lob/date - "
         "if meeting times are mentioned, extract those first, otherwise route "
         "directly to capacity.\n"
+        "If the question seems like a follow-up to the previous one (e.g., "
+        "'what about LOB 2 instead', 'and for Monday?'), and doesn't clearly "
+        "specify a different type of analysis, choose the SAME tool as "
+        "'Last tool used', but route through extractor first if new parameters "
+        "need to be extracted.\n"
         "If you already have a tool result, choose done.\n\n"
         "Respond with EXACTLY ONE WORD: rag, extractor, metrics, service_level, talktime,"
         "compare_days, forecast, forecast_weekday, distribution, timezone, breaks, breaks_meetings, capacity or done."
@@ -519,6 +532,7 @@ def supervisor_node(state: State) -> dict:
     context += f"Offset hours: {state.get('offset_hours', 'none')}\n"
     context += f"Column name: {state.get('column_name', 'none')}\n"
     context += f"Tool result so far: {state.get('tool_result', 'none')}\n"
+    context += f"Last tool used: {state.get('last_tool', 'none')}\n"
 
     decision = call_llm(system_prompt, context, task_type="routing").strip().lower()
 
@@ -647,7 +661,8 @@ if __name__ == "__main__":
         "done": "writer"
     })
 
-    graph = workflow.compile()
+    memory = MemorySaver()
+    graph = workflow.compile(checkpointer=memory)
 
     # result = graph.invoke({"question": "How many calls for Language 1 on LOB 1, on 2015-10-20?"})
     # print("\nFinal result:")
@@ -683,5 +698,16 @@ if __name__ == "__main__":
     # result3 = graph.invoke({"question": "Show me the break schedule for all agents today"})
     # print("\nTest 3:", result3["final_answer"])
 
-    result = graph.invoke({"question": "What's our capacity to handle calls throughout the day?"})
-    print(result["final_answer"])
+    # result = graph.invoke({"question": "What's our capacity to handle calls throughout the day?"})
+    # print(result["final_answer"])
+
+    config = {"configurable": {"thread_id": "session-4"}}
+    result1 = graph.invoke({"question": "What's the service level for Language 1 on LOB 1, on 2015-10-20?"}, config=config)
+    print(result1["final_answer"])
+
+    result2 = graph.invoke({"question": "What about LOB 2 instead?"}, config=config)
+    print(result2["final_answer"])
+
+    # config_new = {"configurable": {"thread_id": "brand-new-session"}}
+    # result_test = graph.invoke({"question": "What's the service level for Language 1 on LOB 2, on 2015-10-20?"}, config=config_new)
+    # print(result_test["final_answer"])
