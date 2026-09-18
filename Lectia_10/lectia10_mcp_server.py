@@ -40,5 +40,19 @@ def get_cv() -> str:
     """
     return "Cristian Ungureanu - Tech Support background, learning AI Agent Development"
 
+
+@mcp.prompt()
+def greeting_prompt(name: str) -> str:
+    """Provides a pre-written conversation starter, personalized with
+    a name, that a client can select and send without typing it manually.
+
+    Args:
+        name: the name to include in the greeting
+
+    Returns:
+        A ready-to-use prompt text
+    """
+    return f"Please write a professional greeting message for {name}, welcoming them to the WFM analysis system."
+
 if __name__ == "__main__":
     mcp.run()
