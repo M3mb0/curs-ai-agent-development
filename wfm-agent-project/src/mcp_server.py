@@ -15,11 +15,25 @@ from tools.wfm_data import (
     forecast_by_pattern,
     forecast_by_weekday_pattern,
 )
+from tools.capacity_planning import (
+    load_arrival_pattern,
+    SHIFTS,
+    distribute_breaks_all_shifts,
+    distribute_breaks_all_shifts_with_meetings,
+    aggregate_breaks_by_interval,
+    calculate_staffing,
+    load_site_params,
+    calculate_capacity,
+)
+from rag.search import cached_search
+
 
 mcp = MCPServer("wfm-agent")
 
 data_path = Path(__file__).parent.parent / "data" / "wfm.xlsx"
 df = load_wfm_data(str(data_path))
+arrival_pattern = load_arrival_pattern(str(data_path))
+site_params = load_site_params(str(data_path))
 
 
 @mcp.tool()
@@ -145,6 +159,80 @@ def forecast_weekday(language: str, lob: str, weekday: str, target_volume: int) 
         A dictionary with the forecasted volume for each interval
     """
     return forecast_by_weekday_pattern(df, language, lob, weekday, target_volume)
+
+
+@mcp.tool()
+def breaks() -> dict:
+    """Distributes agent break times across all shifts, without
+    meeting exclusions.
+
+    Returns:
+        A dictionary mapping each interval to agents on break
+    """
+    all_breaks = distribute_breaks_all_shifts(arrival_pattern, SHIFTS)
+    return aggregate_breaks_by_interval(all_breaks)
+
+
+@mcp.tool()
+def breaks_meetings(meeting_times: str = "none") -> dict:
+    """Distributes agent break times, excluding team meeting periods.
+
+    Args:
+        meeting_times: comma-separated HH:MM-HH:MM ranges, or "none"
+            for default meetings (09:00-10:30, 15:00-16:30)
+
+    Returns:
+        A dictionary mapping each interval to agents on break
+    """
+    if meeting_times == "none":
+        meetings = [("09:00", "10:30"), ("15:00", "16:30")]
+    else:
+        meetings = []
+        for interval in meeting_times.split(","):
+            start, end = interval.split("-")
+            meetings.append((start, end))
+    all_breaks = distribute_breaks_all_shifts_with_meetings(arrival_pattern, SHIFTS, meetings)
+    return aggregate_breaks_by_interval(all_breaks)
+
+
+@mcp.tool()
+def capacity(meeting_times: str = "none") -> dict:
+    """Calculates call-handling capacity per interval, based on staffing.
+
+    Args:
+        meeting_times: comma-separated HH:MM-HH:MM ranges, or "none"
+            for no meeting exclusions
+
+    Returns:
+        A dictionary mapping each interval to its calculated capacity
+    """
+    if meeting_times == "none":
+        staffing = calculate_staffing(arrival_pattern, SHIFTS)
+    else:
+        meetings = []
+        for interval in meeting_times.split(","):
+            start, end = interval.split("-")
+            meetings.append((start, end))
+        staffing = calculate_staffing(arrival_pattern, SHIFTS, meetings)
+    return calculate_capacity(staffing, site_params)
+
+
+@mcp.tool()
+def search_knowledge_base(query: str) -> str:
+    """Searches the company's knowledge base (procedures, SLA targets,
+    escalation guidelines) for information relevant to the query.
+
+    Args:
+        query: the question or topic to search for
+
+    Returns:
+        The combined text of the most relevant matching documents
+    """
+    results = cached_search(query)
+    combined_text = ""
+    for text, source, chunk_index, distance in results:
+        combined_text += f"{text}\n\n"
+    return combined_text
 
 
 if __name__ == "__main__":
