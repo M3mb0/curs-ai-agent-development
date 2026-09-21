@@ -1,3 +1,9 @@
+"""Converts text into embedding vectors using the Gemini API, with
+retry logic (rate-limit handling) for reliability, and adds
+embeddings to a list of chunks.
+"""
+
+
 import sys
 import time
 from pathlib import Path

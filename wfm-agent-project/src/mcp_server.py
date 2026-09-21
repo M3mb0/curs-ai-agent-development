@@ -1,3 +1,9 @@
+"""MCP server exposing all project tools (WFM metrics, capacity
+planning, RAG search) as callable functions, allowing external AI
+clients like Claude Desktop to discover and use them directly.
+"""
+
+
 import sys
 from pathlib import Path
 

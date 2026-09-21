@@ -1,3 +1,9 @@
+"""Manages the PostgreSQL/pgvector connection, creates the kb_chunks
+table if it doesn't exist, and inserts chunks (with embeddings) into
+the database.
+"""
+
+
 import sys
 from pathlib import Path
 

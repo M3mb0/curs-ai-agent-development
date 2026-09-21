@@ -1,3 +1,9 @@
+"""Splits document text into overlapping chunks, counting tokens for
+each chunk, and combining chunks from multiple documents into a
+single list.
+"""
+
+
 import tiktoken
 
 encoder = tiktoken.get_encoding("cl100k_base")

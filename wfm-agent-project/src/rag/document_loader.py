@@ -1,3 +1,8 @@
+"""Loads .md documents from a folder as a list of dicts, each
+containing the filename and its text content.
+"""
+
+
 from pathlib import Path
 
 

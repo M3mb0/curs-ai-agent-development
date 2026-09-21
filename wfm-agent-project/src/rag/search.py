@@ -1,3 +1,9 @@
+"""Performs semantic search over kb_chunks (searching by meaning,
+not exact keywords), using cosine distance between embeddings, with
+an in-memory cache to avoid repeating identical searches.
+"""
+
+
 import sys
 import time
 from pathlib import Path

@@ -1,3 +1,10 @@
+"""Functions for analyzing WFM Intraday_raw data: loading the Excel
+file, calculating daily metrics, service level, talk time, language
+distribution (with chart), timezone conversion, day-to-day comparison,
+and call volume forecasting (by date or by weekday pattern).
+"""
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 

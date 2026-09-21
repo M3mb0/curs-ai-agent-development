@@ -1,3 +1,11 @@
+"""Functions for capacity planning: loading the shift arrival pattern,
+distributing agent break times across shifts (with or without meeting
+exclusions), calculating effective staffing per interval, and
+calculating call-handling capacity based on staffing and site
+parameters.
+"""
+
+
 import pandas as pd
 
 
