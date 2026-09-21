@@ -50,3 +50,8 @@ __queuestorage__
 __tablestorage__
 __azurite_db*__.json
 AzuriteConfig
+
+AzuriteConfig
+__blobstorage__/
+__queuestorage__/
+__azurite_db_*.json
