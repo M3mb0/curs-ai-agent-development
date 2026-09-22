@@ -89,3 +89,11 @@ def test_add_timezone_column():
     updated_df = add_timezone_column(df, -4, "test_utc_minus_4")
     sample_row = updated_df[updated_df["Intvl_UTC"] == "08:00"].iloc[0]
     assert sample_row["test_utc_minus_4"] == "04:00"
+
+
+def test_plot_language_distribution():
+    """Tests that plot_language_distribution creates the chart file."""
+    distribution = {"Language 1": 41.09, "Language 2": 33.0}
+    output_path = "wfm-agent-project/data/test_chart.png"
+    plot_language_distribution(distribution, output_path)
+    assert Path(output_path).exists()
