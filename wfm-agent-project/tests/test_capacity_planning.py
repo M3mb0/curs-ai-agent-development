@@ -1,3 +1,8 @@
+"""Tests for capacity_planning.py functions: break distribution,
+staffing calculation, and capacity calculation.
+"""
+
+
 import sys
 from pathlib import Path
 
