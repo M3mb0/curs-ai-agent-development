@@ -39,3 +39,4 @@ LangGraph multi-agent over Gemini. Everything graph-related is in `src/agents/su
 ## Conventions
 
 - Google-style docstrings (Args/Returns) on every function and a module docstring at the top of each file.
+- All commit messages, code comments and docstrings are written in English.
