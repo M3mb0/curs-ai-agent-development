@@ -17,5 +17,5 @@ DB_CONFIG = {
     "port": "5432",
     "database": "postgres",
     "user": "postgres",
-    "password": "parola123"
+    "password": os.getenv("DB_PASSWORD")
 }

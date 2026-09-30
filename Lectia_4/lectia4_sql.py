@@ -1,4 +1,8 @@
 import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Conectare la baza de date PostgreSQL
 conn = psycopg2.connect(
@@ -6,7 +10,7 @@ conn = psycopg2.connect(
     port="5432", #portul pe care l-am „legat" mai devreme, la pornirea containerului
     database="postgres", #numele bazei de date implicite (Postgres creează automat una cu acest nume)
     user="postgres", #utilizatorul implicit
-    password="parola123" #parola pe care ai setat-o la pornirea containerului
+    password=os.getenv("DB_PASSWORD") #parola pe care ai setat-o la pornirea containerului
 )
 
 cursor = conn.cursor()

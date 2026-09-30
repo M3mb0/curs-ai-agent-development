@@ -58,6 +58,7 @@ Create a `.env` file in the repo root with these variables:
 
 ```
 GEMINI_API_KEY=
+DB_PASSWORD=
 
 # optional, for LangSmith tracing
 LANGSMITH_TRACING=

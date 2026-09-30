@@ -100,7 +100,7 @@ def get_embedding(text: str) -> list:
 
 conn = psycopg2.connect(
     host="localhost", port="5432", database="postgres",
-    user="postgres", password="parola123"
+    user="postgres", password=os.getenv("DB_PASSWORD")
 )
 cursor = conn.cursor()
 
